@@ -1,0 +1,260 @@
+# TARGET — documento de arquitetura; NÃO é configuração carregável pelo skeleton.
+# Não colocar em src/main/resources nem passar a spring.config.*.
+# Pesquisa original 2026-09-18; conferência documental 2026-09-20.
+# Chaves sob target-blueprint ainda NÃO possuem @ConfigurationProperties.
+# Valores são hipóteses para revisão/HML, não limites AWS nem autorização de produção.
+# null/vazio em alvo ou orçamento = configuração incompleta; falhar antes da chamada real.
+document-kind: TARGET_NOT_APPLICATION_CONFIGURATION
+schema-version: 1
+target-blueprint:
+  application:
+    name: aws-ops-toolkit
+    environment: PROD # Enum; exige homologação e guardrails, não autoriza acesso.
+    bind-address: 127.0.0.1 # Somente loopback; não 0.0.0.0.
+    port: 8080 # TCP 1..65535; porta livre local.
+    max-request-body-bytes: 65536 # Bytes, proposta 1 KiB..1 MiB; limita entrada.
+    authentication-required: true
+    token-source: OPERATOR_SESSION # Sem token literal neste documento.
+    allowed-browser-origins: [] # Vazio: nenhum browser origin permitido.
+    openapi-enabled: false # Somente após avaliar autenticação e exposição.
+  execution:
+    write-enabled: false
+    default-mode: DRY_RUN # EXECUTE precisa de aprovação por plano.
+    incident-id: "<INCIDENT_ID>"
+    change-id: "<CHANGE_ID_IF_REQUIRED>"
+    reason: "<APPROVED_OPERATION_REASON>"
+    logical-correction-id: "<STABLE_LOGICAL_CORRECTION_ID>"
+    rule-version: "<REVIEWED_RULE_VERSION>"
+    approval:
+      confirmed: false
+      plan-hash: null # Hash calculado, não segredo; null bloqueia EXECUTE.
+      expires-at: null # ISO-8601 UTC; obrigatório antes de executar.
+      require-incident-id: true
+      require-reason: true
+      require-target-validation: true
+    canary:
+      enabled: true
+      max-items: 10 # Itens; etapas propostas 10/100/1000, aprovadas separadamente.
+      full-execution-released: false
+    max-items: 10 # Itens únicos admitidos; teto global duro, sem ilimitado implícito.
+    max-duration: 30m # Duração de job; proposta, calibrar com janela aprovada.
+    item-deadline: 60s # Inclui fila, permits, retry e chamada; não só timeout remoto.
+    shutdown-drain-timeout: 30s # Drenagem cooperativa; chamada incerta vai a UNKNOWN.
+    error-budget:
+      max-errors: 10 # Falhas conhecidas; teto absoluto, homologar por operação.
+      max-error-rate: 0.05 # Fração 0..1 sobre resultados relevantes, não itens scaneados.
+      window: 60s # Duração da janela móvel.
+      minimum-samples: 100 # Taxa só avaliada após amostra; teto absoluto sempre ativo.
+      max-conflict-rate: 0.01 # Fração; conflitos têm orçamento próprio.
+      pause-on-authorization-error: true
+      pause-on-critical-schema-error: true
+      pause-on-ledger-error: true
+  identity:
+    aws-enabled: false
+    provider-mode: EXPLICIT_PROFILE # Ou provider corporativo homologado.
+    profile: "<APPROVED_AWS_PROFILE>"
+    expected-account: "<ACCOUNT_ID>"
+    expected-principal-policy: "<APPROVED_ROLE_POLICY_REFERENCE>"
+    region: "<REGION>"
+    health-check-interval: 60s # Duração; erro remoto pode acontecer antes do próximo check.
+    revalidate-on-resume: true
+    authentication-failure-action: AUTHENTICATION_REQUIRED
+    automatic-privilege-elevation: false
+    persist-credentials: false
+    allowlists:
+      account-ids: [] # Vazio bloqueia; preencher apenas IDs aprovados.
+      regions: []
+      table-arns: []
+      queue-arns: []
+      topic-arns: []
+      bucket-arns: []
+      lambda-qualified-arns: []
+  concurrency:
+    max-jobs: 1 # Jobs; proposta 1..4, total compartilhado por destino.
+    max-admitted-items: 32 # Itens; proposta 1..256, adquirir antes de submeter VT.
+    queue-max-items: 128 # Itens; proposta 1..2048.
+    queue-max-bytes: 16777216 # Bytes; 16 MiB inicial, medir objetos decodificados.
+    cpu-workers: null # Threads plataforma; definir pelo lab, não número de itens.
+    cpu-queue-max-items: 32 # Itens; CPU pesada em executor dedicado limitado.
+    acquire-timeout: 5s # Duração; não esperar permit indefinidamente.
+    adaptive:
+      enabled: false # ADVANCED; somente após baseline manual medido.
+      minimum-inflight: 1
+      maximum-inflight: 8 # Teto de chamadas, ainda limitado por orçamento aprovado.
+      sample-interval: 10s
+      healthy-windows-before-increase: 3
+      additive-increase: 1 # Permissão por ciclo saudável.
+      multiplicative-decrease: 0.5 # Fração 0..1; reduzir rapidamente.
+      cooldown: 60s
+    hot-tuning:
+      enabled: false
+      audit-required: true
+      allow-reduce-rate: true
+      allow-reduce-concurrency: true
+      allow-increase-beyond-approved-limit: false
+      allow-target-or-rule-change: false
+  aws-transport:
+    kind: APACHE5_SYNC
+    max-connections: 8 # Conexões compartilhadas; proposta 1..64.
+    connect-timeout: 3s
+    acquisition-timeout: 2s
+    socket-timeout: 25s
+    max-idle-time: 30s
+    attempt-timeout: 30s
+    api-call-timeout: 35s # Deve acomodar tentativas/backoff conforme policy específica.
+    retry:
+      strategy: STANDARD
+      default-max-attempts: 1 # Efeitos ambíguos sem idempotência não repetem.
+      proven-safe-read-max-attempts: 3 # Somente clients/operações segregados e validados.
+      operation-level-automatic-retry: false
+    user-agent-product: aws-ops-toolkit
+    physical-requests-per-second: null # Obrigatório por recurso antes de liberar; null não é infinito.
+    burst-requests: 1 # Requests; evitar rajada ao liberar backlog.
+  dynamodb:
+    enabled: false
+    table-arn: "<APPROVED_TABLE_ARN>"
+    access-mode: SCHEMALESS # Ou TYPED com schema/converters revisados.
+    selection-preference: GET_QUERY_INDEX_BEFORE_SCAN
+    projection-columns: [] # Somente atributos necessários à regra/evidência.
+    read-capacity-units-per-second: null # Orçamento aprovado; distinto de requests/s.
+    write-capacity-units-per-second: null
+    max-read-inflight: 2 # Chamadas; começar baixo mesmo em on-demand.
+    max-write-inflight: 1
+    return-consumed-capacity: INDEXES
+    scan:
+      enabled: false # Excepcional: requer plano/custo aprovado.
+      total-segments: 8 # Segmentos lógicos; fixo em todas as retomadas.
+      active-segments: 2 # Concorrência; 1..total-segments e teto aprovado.
+      evaluated-item-limit: 100 # Itens avaliados, não candidatos retornados.
+      consistent-read: false # Não cria snapshot; GSI tem restrição própria.
+      checkpoint-per-segment: true
+    writes:
+      enabled: false
+      require-condition: true
+      allow-full-item-overwrite: false
+      require-durable-pre-image: true
+      require-verifiable-idempotency: true
+      outbox-enabled: false # Só se schema/recurso já aprovados para o incidente.
+      outbox-table-arn: null
+  sqs:
+    enabled: false
+    queue-arn: "<APPROVED_QUEUE_ARN>"
+    queue-type: STANDARD # Ou FIFO; validar atributos do recurso real.
+    max-inflight: 2 # Chamadas; orçamento compartilhado com consumidores existentes.
+    long-poll-wait: 20s # API SQS: até 20 s; timeout HTTP deve comportar espera/rede.
+    receive-batch-size: 10 # Mensagens; validar limites atuais no adapter.
+    visibility-timeout: 60s # Exemplo; maior que tempo de processamento com margem.
+    visibility-extension-enabled: false
+    shared-queue-consumption-enabled: false # Alteração explícita interfere em consumidores normais.
+    delete-on-inspection: false
+    replay-enabled: false
+    delete-original-after-replay: false # Mesmo após send, política/resultado devem autorizar ack.
+    acknowledgement-mode: MANUAL
+    fifo-message-group-policy: "<REVIEWED_GROUP_POLICY_IF_FIFO>"
+    idempotency-key-policy: STABLE_BUSINESS_EVENT_ID
+  sns:
+    enabled: false
+    topic-arn: "<APPROVED_TOPIC_ARN>"
+    max-inflight: 2
+    publish-batch-size: 10 # Entradas; conferir limite/resultado por entrada no adapter.
+    fifo-deduplication-policy: STABLE_EVENT_ID_IF_FIFO
+    validate-payload: true
+  lambda:
+    enabled: false
+    qualified-function-arn: "<APPROVED_QUALIFIED_LAMBDA_ARN>"
+    invocation-type: REQUEST_RESPONSE # Aceite async não prova sucesso de negócio.
+    max-inflight: 1
+    invocation-deadline: 30s # Duração por função; ajustar ao contrato, não herdar cegamente.
+    inspect-function-error-and-payload: true
+    retry-without-idempotency: false
+  s3:
+    enabled: false
+    approved-bucket-arn: "<APPROVED_BUCKET_ARN>"
+    prefix: "<APPROVED_INCIDENT_PREFIX>"
+    upload-reports-enabled: false
+    delete-enabled: false
+    transfer-manager-enabled: false # ADVANCED e dependência adicional.
+    max-inflight: 2
+    multipart-enabled: false
+    multipart-part-bytes: 8388608 # 8 MiB exemplo; validar limites S3 e estimativa completa.
+    encryption-mode: "<APPROVED_ENCRYPTION_MODE>"
+    kms-key-arn: null # Só quando política exigir KMS; nunca material de chave.
+  http:
+    enabled: false
+    base-uri: "https://api.example.invalid"
+    allowed-hosts: [] # Vazio bloqueia; HTTPS obrigatório, sem redirects.
+    follow-redirects: false
+    authentication-source: "<APPROVED_EXTERNAL_TOKEN_PROVIDER>"
+    max-inflight: 4
+    requests-per-second: null
+    connect-timeout: 3s
+    response-timeout: 10s
+    max-response-bytes: 1048576 # Bytes; 1 MiB inicial, validar schema/tamanho antes de parse.
+    correlation-header: X-Correlation-Id
+    idempotency-header: Idempotency-Key
+    automatic-retry-enabled: false
+    retry-after-max-wait: 30s # Também limitado por deadline restante.
+    circuit-breaker-enabled: false # CORE seletivo; probes não podem causar efeito inseguro.
+  persistence:
+    ledger-kind: SQLITE_TARGET_NOT_IMPLEMENTED
+    ledger-directory: "<APPROVED_LOCAL_LEDGER_DIRECTORY>"
+    journal-mode: WAL
+    synchronous: FULL
+    foreign-keys: true
+    busy-timeout: 5s
+    max-writer-queue-items: 128 # Fila limitada; transações sem I/O remoto dentro.
+    checkpoint-policy: AFTER_DURABLE_PAGE_OUTCOMES
+    maximum-checkpoint-age: 60s # Alerta/pausa conforme operação; nunca força avanço prematuro.
+    automatic-resume-on-startup: false
+    exclusive-process-lock-required: true
+    reconcile-unknown-before-write: true
+  reports:
+    directory: "<APPROVED_REPORT_DIRECTORY>"
+    temp-directory: "<APPROVED_TEMP_DIRECTORY>"
+    formats: [CSV, SUMMARY_JSON]
+    charset: UTF-8
+    delimiter: ","
+    line-ending: CRLF
+    allowed-columns: [] # Vazio exige seleção explícita antes da exportação.
+    full-item-export-enabled: false
+    gzip-enabled: false
+    part-max-rows: 100000 # Linhas; tamanho em bytes também limita cada parte.
+    part-max-bytes: 67108864 # 64 MiB por parte inicial.
+    projection-backlog-max-bytes: 268435456 # 256 MiB; fecha admissão se writer atrasar.
+    projection-backlog-max-age: 60s
+    include-before-after: false # Habilitar só colunas mínimas aprovadas se operação exigir.
+    xlsx:
+      enabled: false
+      library: POI_SXSSF_TARGET
+      row-window: 100 # Linhas em heap, não total da worksheet.
+      sample-max-rows: 1000 # Resumo/amostra; detalhes permanecem CSV.
+      compress-temp-files: true
+      unlimited-shared-strings: false
+  disk:
+    minimum-free-bytes: 2147483648 # 2 GiB TARGET; skeleton atual usa 1 GiB.
+    estimate-safety-factor: 2.0 # Multiplicador >=1; calibrar com tamanho p95 por artefato.
+    check-interval: 5s
+    check-before-write-chunk: true
+    check-ledger-report-and-temp-volumes: true
+    continue-writing-without-evidence: false
+  audit:
+    required-for-production: true
+    record-intent-before-effect: true
+    record-outcome-after-effect: true
+    log-credentials-or-bodies: false
+    allowed-metadata-fields: [operationId, incidentId, step, account, region, action, result]
+    retention-days: null # Política corporativa obrigatória; não presumir 7/30/90 dias.
+    automatic-deletion-enabled: false
+    delete-unresolved-or-active-evidence: false
+  observability:
+    local-metrics-enabled: true
+    metrics-include-operation-id-tag: false
+    metrics-max-distinct-resource-aliases: 32 # Cardinalidade finita e revisada.
+    progress-log-interval: 10s # Agregado, nunca INFO por item em massa.
+    debug-payload-logging: false
+    log-max-file-bytes: 10485760 # 10 MiB; budget separado do ledger.
+    log-total-size-cap-bytes: 104857600
+    otlp-export-enabled: false
+    otlp-endpoint: null
+    jfr-on-startup-enabled: false
+    jfr-max-bytes: 268435456 # 256 MiB se coleta for autorizada.
