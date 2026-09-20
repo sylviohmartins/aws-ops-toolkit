@@ -1,0 +1,7 @@
+# Architecture profile only: synthetic operations reject every non-LOCAL environment.
+toolkit:
+  environment: PROD
+  write-enabled: false
+  max-concurrent-operations: 1
+  aws:
+    enabled: false

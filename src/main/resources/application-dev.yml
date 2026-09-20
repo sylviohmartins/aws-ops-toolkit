@@ -1,0 +1,5 @@
+toolkit:
+  environment: DEV
+  write-enabled: false
+  aws:
+    enabled: false
