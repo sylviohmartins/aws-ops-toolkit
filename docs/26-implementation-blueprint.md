@@ -11,13 +11,13 @@ Este documento descreve o código em `src/main/java/io/github/awsopstoolkit` e s
 | Operação `synthetic-inventory` | Real | Somente LOCAL/DRY_RUN; nenhum dado AWS |
 | Execução assíncrona, estado, pausa/cancelamento e retomada | Real | Estado demonstrativo menor que a máquina alvo |
 | Checkpoint JSON e CSV em chunks | Real | Replay determinístico local; sem ledger de efeitos remotos |
-| Clients AWS por profile explícito e Apache 5 | Exemplo opcional | Beans criados somente se AWS habilitada; não há operação AWS registrada |
-| Validação STS de account | Exemplo opcional | Não verifica role/allowlist de recurso nem concede permissão |
-| DynamoDB/SQS/SNS/Lambda/S3 | Exemplos | Sem binding automático à engine; políticas da operação permanecem necessárias |
-| HTTP Interface + RestClient | Exemplo | Construção explícita; sem endpoint externo chamado pela demo |
-| Autorização produtiva, plano, canary e auth resume | Alvo | EXECUTE indisponível |
-| SQLite/WAL, ledger, outbox/reconciliação | Alvo | JSON atual não tem essas garantias |
-| XLSX, exportação S3, observabilidade completa | Alvo | CSV/medição local não são audit trail produtivo completo |
+| Clients AWS centralizados por profile/provider e Apache 5 | Real | Habilitados somente quando `toolkit.aws.enabled=true`; ambiente corporativo ainda requer homologação |
+| Validação STS/account/principal/recurso | Real | Allowlist e identidade efetiva são guardrails; Break Glass/SSO corporativo permanece `VALIDAR NO AMBIENTE` |
+| DynamoDB/SQS/SNS/Lambda/S3 | Real no runtime | Workflows concretos, budgets, ledger e laboratório Moto; sem alegar homologação AWS real |
+| HTTP/JDK `PaymentGateway` | Real | Endpoint/host/timeouts/retry/body limit via `HttpProperties`; 429/5xx participam do backpressure |
+| Autorização, DRY_RUN, plano, aprovação, canary e auth resume | Real | Writes continuam fail-closed por múltiplos gates |
+| SQLite/WAL, ledger e reconciliação | Real | Durável localmente; não cria transação distribuída com AWS |
+| CSV streaming/XLSX SXSSF, audit e métricas | Real | Retenção/PII/Datadog corporativos continuam dependentes do ambiente |
 
 ## Pacotes e arquivos reais
 
@@ -45,7 +45,13 @@ io.github.awsopstoolkit/
   checkpoint/
     FileCheckpointStore.java
   report/
-    Csv.java
+    CsvColumn.java
+    CsvReportWriter.java
+    CsvReportWriterFactory.java
+    OperationReportRow.java
+    OperationReportSchema.java
+    ReportResult.java
+    ReportWriter.java
   authentication/
     AwsCredentialHealthService.java
   aws/
@@ -57,10 +63,18 @@ io.github.awsopstoolkit/
     SnsService.java
     LambdaService.java
     S3Service.java
-  integration/
-    PaymentLookup.java
-    HttpIntegrationClient.java
-    IntegrationException.java
+  runtime/
+    PaymentGateway.java
+  batch/
+    Batching.java
+    BatchProcessor.java
+  dynamodb/
+    DynamoTableDescriptor.java
+    DynamoTableGateway.java
+    DynamoTableGatewayFactory.java
+  report/
+    CsvReportWriter.java
+    CsvColumn.java
 ```
 
 Pacotes por capacidade mantêm arquivos próximos de sua responsabilidade. Subpacotes `core/api/adapter` poderão surgir quando houver implementação suficiente; criar módulos Maven separados agora acrescentaria manutenção sem fronteiras de release distintas. A árvore alvo mais extensa está na [arquitetura](02-architecture.md).
@@ -82,12 +96,12 @@ Pacotes por capacidade mantêm arquivos próximos de sua responsabilidade. Subpa
 | `OperationRequest` | Modo e parâmetros JSON | Parâmetros convertidos ao tipo da definição |
 | `OperationSnapshot` | Estado persistido, progresso e versão da definição | Resposta da API e fonte de recuperação local |
 | `OperationStatus` | Estados e predicados active/resumable | PAUSED e INTERRUPTED são retomáveis |
-| `PreflightCheckService` | Bloqueia EXECUTE/ambiente remoto, limita volume e disco | Falha no startup se escrita for habilitada |
+| `PreflightCheckService` | Valida volume, disco e guardrails da foundation; runtime possui preflight adicional por identidade/recurso | Escrita exige múltiplos gates e não é autorizada apenas por configuração |
 | `SyntheticInventoryOperation` | Gera candidatos/ignorados determinísticos em páginas | Apenas dados `synthetic-*`; memória por página |
 | `FileCheckpointStore` | Lock de diretório, snapshots/chunks atômicos, CSV | Sem transação entre arquivos e AWS |
-| `Csv` | Escaping e mitigação de fórmulas comuns | Schema fixo e limitações documentadas |
+| `CsvReportWriter` | CSV streaming, escaping e mitigação de formula injection | Colunas tipadas e flush vêm da infraestrutura/configuração |
 | `AwsCredentialHealthService` | Consulta STS e classifica saúde básica | Retorna conta/ARN efetivos internamente, sem secrets/tokens; masking de evidências pertence ao alvo |
-| `AwsCallGate` | Limita simultaneidade e início de chamadas lógicas | Retries físicos permanecem na política do client |
+| `AwsCallGate` | Limita simultaneidade e início de chamadas lógicas na foundation | Runtime usa `DispatchLimiter`; retry AWS adicional pertence a `JobContext.read`, com SDK em uma tentativa |
 | `WriteAuthorization` | Porta obrigatória antes de efeitos remotos | Nenhuma implementação permissiva fornecida |
 | `DynamoDbService` | Get/BatchGet/Query/scan paralelo e mutações com guard | Callbacks confirmam página antes do checkpoint |
 | `DynamoDocument` | Conversões tipadas de atributos | Preserva número decimal; não é antiga Document API v1 |
@@ -95,9 +109,10 @@ Pacotes por capacidade mantêm arquivos próximos de sua responsabilidade. Subpa
 | `SnsService` | Publish/batch exclusivamente em topic explícito | Retorna falhas por entrada |
 | `LambdaService` | Invocação e classificação transporte/function error | ACCEPTED não significa negócio concluído |
 | `S3Service` | Head/list page/download/upload/delete | Download limitado e streaming; multipart fica no alvo |
-| `PaymentLookup` | Contrato `@GetExchange` de enriquecimento | DTO pequeno e correlation ID |
-| `HttpIntegrationClient` | HTTPS/host permitido, timeouts e erro sanitizado | Sem retry automático; caller fecha transporte |
-| `IntegrationException` | Categorias estáveis de erro HTTP | Não carrega body ou token |
+| `PaymentGateway` | Enriquecimento HTTP read-only com allowlist, body bounded e retries classificados | Usa `HttpProperties` e o backpressure do runtime; sem stack HTTP paralelo |
+| `Batching/BatchProcessor` | Chunking incremental e batches concorrentes bounded | Não materializam o dataset global; erro parcial estruturado |
+| `DynamoTableDescriptor/Gateway/Factory` | Extensão tipada de tabelas recorrentes | Nome físico vem de properties; writes continuam no adapter guardado |
+| `CsvReportWriter/CsvColumn` | Reporting CSV streaming reutilizável | Commons CSV, flush configurável e proteção contra formula injection |
 
 ## Caminho real de uma página
 
@@ -126,72 +141,29 @@ sequenceDiagram
 
 Chunk gravado sem cursor confirmado é órfão; o replay determinístico substitui-o no mesmo offset. Download usa apenas chunks cobertos pelo cursor do snapshot obtido. `ATOMIC_MOVE` não é atomicidade multi-arquivo, e esta técnica não pode ser reutilizada como ledger de escrita remota. Ver [checkpoint](23-checkpoint-resume-idempotency.md).
 
-## Adicionar uma regra local compilável
+## Adicionar uma nova operação
 
-Exemplo para novo arquivo `src/main/java/io/github/awsopstoolkit/operation/SyntheticParityOperation.java`. Ele reutiliza o schema demonstrativo `recordId,decision` do relatório e o contrato paginado atual; não adiciona AWS.
+A receita operacional mantida em [adding-operation.md](development/adding-operation.md) é a fonte de verdade para extensão. O runtime descobre novos beans `Workflow` via Spring; o teste `WorkflowExtensionRegistrationTest` comprova que uma implementação adicional entra no catálogo sem editar `JobCoordinator`, controller ou configuração AWS.
 
-```java
-package io.github.awsopstoolkit.operation;
+Uma nova operação deve concentrar-se em:
 
-import io.github.awsopstoolkit.report.Csv;
-import jakarta.validation.constraints.Max;
-import jakarta.validation.constraints.Min;
-import org.springframework.stereotype.Component;
+1. request/modelo específico;
+2. seleção e validação da regra;
+3. transformação/efeito usando os adapters existentes;
+4. projection/colunas de relatório quando necessárias;
+5. bean `Workflow` da operação.
 
-@Component
-public final class SyntheticParityOperation
-        implements OperationDefinition<SyntheticParityOperation.Input> {
+O core continua responsável por DRY_RUN/EXECUTE, budgets, identidade, allowlists, concorrência, retries seguros, checkpoint/ledger, canary, reconciliação, audit e relatórios. Não criar threads próprias, clientes AWS por operação, sleeps de retry, CSV manual ou novos controllers globais.
 
-    public record Input(@Min(1) @Max(10_000_000) long records) {}
+Para uma fonte DynamoDB recorrente, combinar a operação com [adding-dynamodb-table.md](development/adding-dynamodb-table.md): modelo + `TableSchema<T>` + `DynamoTableDescriptor<T>` + mapping lógico→físico em properties. Para investigação ad hoc, manter o acesso Document/AttributeValue existente em vez de modelar uma entidade inteira.
 
-    @Override
-    public String type() {
-        return "synthetic-parity";
-    }
+## Operação AWS no runtime
 
-    @Override
-    public String version() {
-        return "1";
-    }
+O runtime operacional já implementa identidade/allowlists, `DRY_RUN`/plano selado, aprovação, `EXECUTE`, ledger por efeito, canary, budgets e reconciliação. Uma regra nova não deve contornar esses contratos: ela declara recursos, seleciona candidatos e usa `JobContext.read/effect` e os adapters existentes.
 
-    @Override
-    public Class<Input> inputType() {
-        return Input.class;
-    }
+DynamoDB real usa cursores/keys do SDK, paginação e segmentos quando aplicável; o `long cursor` da foundation sintética continua apenas uma demonstração local. O modo tipado `DynamoTableGateway<T>` e o modo Document/AttributeValue coexistem e compartilham client/configuração centralizados.
 
-    @Override
-    public long total(Input input) {
-        return input.records();
-    }
-
-    @Override
-    public void execute(Input input, OperationContext context) throws Exception {
-        long cursor = context.startCursor();
-        while (cursor < input.records() && !context.stopRequested().getAsBoolean()) {
-            long end = Math.min(cursor + context.pageSize(), input.records());
-            var rows = new StringBuilder(context.pageSize() * 40);
-            for (long item = cursor; item < end; item++) {
-                rows.append(Csv.cell("parity-" + item))
-                        .append(',')
-                        .append(Csv.cell(item % 2 == 0 ? "CANDIDATE" : "SKIPPED"))
-                        .append("\r\n");
-            }
-            context.commit().accept(end, rows.toString());
-            cursor = end;
-        }
-    }
-}
-```
-
-O registry encontra o bean automaticamente. Iniciar com `POST /api/v1/operations/synthetic-parity` e body `{"mode":"DRY_RUN","parameters":{"records":1000}}`. Incrementar `version()` quando seleção, transformação ou schema do resultado mudar; não retomar chunks de uma definição incompatível. Alteração de versão exige novo job.
-
-O commit espera exatamente `min(cursor + pageSize, total)` e o relatório atual tem duas colunas fixas. Uma operação de outra natureza precisa evoluir esses contratos deliberadamente; não contornar a verificação de cursor nem produzir relatório com header incompatível. Evitar listas globais, threads próprias, sleeps de retry e providers dentro da regra.
-
-## Evolução para operação AWS
-
-Uma regra real não pode simplesmente substituir a geração sintética por uma mutação no callback. A sequência de evolução é: integrar identidade e allowlist à engine, introduzir plano/versão e classificação de efeitos, adotar ledger por etapa, implementar idempotência/reconciliação e validar a política antes de conectar adapters de escrita. API EXECUTE continua rejeitada enquanto essas etapas estiverem pendentes.
-
-Interfaces de relatório/cursor por serviço permitirão varreduras com contagem desconhecida e `LastEvaluatedKey`; `long cursor` da demo não representa esse cursor AWS. `total()` exato é conveniência da fonte sintética, não uma promessa de contar tabela mutável antecipadamente. Os [contratos alvo](05-operation-engine.md) e o [roadmap](20-implementation-roadmap.md) detalham a migração.
+O que permanece fora do código não é infraestrutura básica do toolkit, e sim **homologação ambiental**: IAM/SSO/Break Glass corporativo, quotas e throttling reais, proxy/TLS/mTLS, políticas de PII/retenção e limites sustentáveis de DEV/HML. Esses pontos continuam `VALIDAR NO AMBIENTE`.
 
 ## Validação proporcional
 

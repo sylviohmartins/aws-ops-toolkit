@@ -1,14 +1,14 @@
 # Integrações REST
 
-**DECISÃO:** Spring HTTP Service Clients descrevem interfaces e RestClient executa em fluxo síncrono limitado. Não adicionar OpenFeign nem WebFlux ao caminho padrão. HTTP Interface não compete com RestClient: o primeiro descreve o contrato, o segundo é o cliente subjacente. [Spring REST clients](https://docs.spring.io/spring-framework/reference/integration/rest-clients.html).
+**DECISÃO:** o runtime executável usa o `java.net.http.HttpClient` do JDK para o caminho HTTP pequeno e controlado do toolkit, evitando uma dependência/stack paralela sem benefício concreto. Spring HTTP Service Clients/RestClient continuam alternativas válidas para uma integração futura mais declarativa, mas só devem ser introduzidos quando houver contrato real que justifique a abstração. Não adicionar OpenFeign nem WebFlux por padrão. [Spring REST clients](https://docs.spring.io/spring-framework/reference/integration/rest-clients.html).
 
-## Exemplo compilável
+## Implementação operacional
 
-[PaymentLookup](../src/main/java/io/github/awsopstoolkit/integration/PaymentLookup.java) usa `@GetExchange`, path variable validada e `X-Correlation-ID`. [HttpIntegrationClient](../src/main/java/io/github/awsopstoolkit/integration/HttpIntegrationClient.java) constrói proxy sobre RestClient/JDK HTTP, permite somente HTTPS/hosts aprovados, desabilita redirects, limita simultaneidade e inícios de chamada. Nenhum bean é criado automaticamente para essa integração.
+O caminho executável usa [PaymentGateway](../src/main/java/io/github/awsopstoolkit/runtime/PaymentGateway.java), construído a partir de `HttpProperties`. Há uma única fonte de verdade para endpoint/hosts, connect/response timeout, tentativas, `Retry-After` máximo e tamanho máximo de body. O adapter reutiliza `HttpClient`, não segue redirects, limita o body antes de materializá-lo e integra retries/throttling ao mesmo backpressure do runtime.
 
-Configuração do exemplo: conexão 3s, resposta 10s; número de chamadas simultâneas e taxa são argumentos obrigatórios do construtor. HttpClient é reutilizado e fechado junto ao adapter. `AwsCallGate` é reaproveitado como limitador de chamadas lógicas: apesar do nome, seu código não depende de AWS. Evolução pode renomeá-lo para `CallGate` quando virar porta compartilhada.
+Não existe um cliente HTTP genérico paralelo nem um proxy sem consumidor: uma integração nova deve criar apenas seu adapter/DTO quando o contrato externo justificar e reutilizar a política comum documentada em [adicionar integração](development/adding-integration.md). Isso evita dois stacks HTTP com defaults divergentes.
 
-O pool interno do JDK reutiliza conexões, mas a aplicação controla requests em voo pelo gate; não alegar que o JDK builder expõe um `maxConnections` equivalente ao Apache. Se for requisito controlar pool total e por rota independentemente, trocar para Apache HttpComponents e verificar timeout de aquisição. Uma allowlist de host deve incluir política de porta, DNS/proxy e mTLS no alvo; HTTPS sozinho não valida destino corporativo. Base URI vem de configuração aprovada, nunca da API do job.
+O pool interno do JDK reutiliza conexões; a aplicação controla admissão por `DispatchLimiter` e pelos budgets do job. Não alegar que o JDK builder expõe um `maxConnections` equivalente ao Apache. Se o ambiente exigir controle de pool total/por rota, proxy ou mTLS especializado, validar em DEV/HML antes de trocar transporte. Base URI vem de configuração aprovada, nunca da API do job.
 
 ## Classificação e política alvo
 

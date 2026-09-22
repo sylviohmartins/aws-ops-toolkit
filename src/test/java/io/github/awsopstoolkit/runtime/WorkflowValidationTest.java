@@ -16,7 +16,13 @@ class WorkflowValidationTest {
     void unqualifiedLambdaArnIsRejectedBeforePlanning() {
         var rule =
                 new ServiceWorkflow(
-                        ServiceWorkflow.Kind.LAMBDA_INVOKE, null, null, null, null, null);
+                        ServiceWorkflow.Kind.LAMBDA_INVOKE,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        RuntimeTestFixtures.sqs());
         for (String function :
                 java.util.List.of(
                         "arn:aws:lambda:us-east-1:123456789012:function:target",
@@ -193,7 +199,14 @@ class WorkflowValidationTest {
     @Test
     void sqsDryRunDoesNotRequireVisibilityImpactConsent() {
         var rule =
-                new ServiceWorkflow(ServiceWorkflow.Kind.DLQ_REPLAY, null, null, null, null, null);
+                new ServiceWorkflow(
+                        ServiceWorkflow.Kind.DLQ_REPLAY,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        RuntimeTestFixtures.sqs());
         var request =
                 new JobRequest(
                         "dlq-replay",
@@ -239,45 +252,9 @@ class WorkflowValidationTest {
     private static ExecutionPolicy policy(
             ToolkitProperties.Environment environment, boolean writeEnabled) {
         var runtime =
-                new RuntimeProperties(
-                        true,
-                        true,
-                        null,
-                        Set.of("table"),
-                        Set.of("principal"),
-                        10,
-                        1,
-                        10,
-                        86400,
-                        900,
-                        30,
-                        null,
-                        Set.of(),
-                        3000,
-                        10000,
-                        3,
-                        10);
-        var toolkit =
-                new ToolkitProperties(
-                        environment,
-                        Path.of("."),
-                        1_048_576,
-                        1,
-                        10,
-                        writeEnabled,
-                        "local-test-token-not-for-real-use-123",
-                        new ToolkitProperties.Aws(
-                                false,
-                                "us-east-1",
-                                "",
-                                "123456789012",
-                                2,
-                                3000,
-                                2000,
-                                25000,
-                                30000,
-                                30000,
-                                35000));
-        return new ExecutionPolicy(runtime, toolkit, null);
+                RuntimeTestFixtures.runtime(
+                        true, null, Set.of("table"), Set.of("principal"), 10, 1, 10);
+        var toolkit = RuntimeTestFixtures.toolkit(environment, Path.of("."), writeEnabled);
+        return new ExecutionPolicy(runtime, toolkit, RuntimeTestFixtures.aws("123456789012"), null);
     }
 }

@@ -1,5 +1,6 @@
 toolkit:
-  environment: DEV
-  write-enabled: false
   aws:
     enabled: false
+  core:
+    environment: DEV
+    write-enabled: false

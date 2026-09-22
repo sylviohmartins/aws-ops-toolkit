@@ -1,5 +1,6 @@
 package io.github.awsopstoolkit.runtime;
 
+import io.github.awsopstoolkit.security.Hashing;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
@@ -11,6 +12,11 @@ import java.util.function.Consumer;
 
 /** Single local writer, FULL durability. No remote effect is presumed atomic with SQLite. */
 public final class SqliteJournal implements AutoCloseable {
+    private static final int MAX_RECORD_KEY_CHARS = 2_048;
+    private static final int MAX_RECORD_PAYLOAD_CHARS = 1_048_576;
+    private static final int PLAN_PAGE_SIZE = 100;
+    private static final int REPORT_WINDOW_SIZE = 500;
+    private static final int MAX_EFFECT_PREFIX_CHARS = 64;
     private final Connection db;
     private final Path directory;
 
@@ -122,8 +128,8 @@ public final class SqliteJournal implements AutoCloseable {
                 () -> {
                     long inserted = 0;
                     for (var candidate : page.records()) {
-                        if (candidate.key().length() > 2048
-                                || candidate.payload().length() > 1048576)
+                        if (candidate.key().length() > MAX_RECORD_KEY_CHARS
+                                || candidate.payload().length() > MAX_RECORD_PAYLOAD_CHARS)
                             throw new IllegalArgumentException("Record too large");
                         inserted +=
                                 update(
@@ -168,7 +174,7 @@ public final class SqliteJournal implements AutoCloseable {
     public synchronized String seal(String id, JobState targetState) throws SQLException {
         if (targetState != JobState.READY && targetState != JobState.DRY_RUN_COMPLETE)
             throw new IllegalArgumentException("Invalid sealed-plan state");
-        var digest = sha256();
+        var digest = Hashing.sha256Digest();
         var job = job(id);
         hashField(digest, job.request());
         hashField(digest, job.version());
@@ -385,7 +391,7 @@ public final class SqliteJournal implements AutoCloseable {
 
     public synchronized NamedEffect latestEffect(String id, long task, String prefix)
             throws SQLException {
-        if (!prefix.matches("[a-z0-9/-]{1,64}"))
+        if (!prefix.matches("[a-z0-9/-]{1," + MAX_EFFECT_PREFIX_CHARS + "}"))
             throw new IllegalArgumentException("Invalid effect prefix");
         try (var s =
                         statement(
@@ -405,9 +411,10 @@ public final class SqliteJournal implements AutoCloseable {
         List<Map<String, Object>> rows = new ArrayList<>();
         try (var s =
                         statement(
-                                "SELECT seq,record_key,payload,state,outcome FROM tasks WHERE job=? AND seq>? ORDER BY seq LIMIT 100",
+                                "SELECT seq,record_key,payload,state,outcome FROM tasks WHERE job=? AND seq>? ORDER BY seq LIMIT ?",
                                 id,
-                                after);
+                                after,
+                                PLAN_PAGE_SIZE);
                 var r = s.executeQuery()) {
             while (r.next())
                 rows.add(
@@ -501,9 +508,10 @@ public final class SqliteJournal implements AutoCloseable {
             synchronized (this) {
                 try (var s =
                                 statement(
-                                        "SELECT seq,record_key,state,outcome FROM tasks WHERE job=? AND seq>? ORDER BY seq LIMIT 500",
+                                        "SELECT seq,record_key,state,outcome FROM tasks WHERE job=? AND seq>? ORDER BY seq LIMIT ?",
                                         id,
-                                        after);
+                                        after,
+                                        REPORT_WINDOW_SIZE);
                         var r = s.executeQuery()) {
                     while (r.next())
                         rows.add(
@@ -526,9 +534,10 @@ public final class SqliteJournal implements AutoCloseable {
         List<ReportRow> rows = new ArrayList<>();
         try (var s =
                         statement(
-                                "SELECT seq,record_key,state,outcome FROM tasks WHERE job=? AND seq>? AND outcome IN ('FAILED','FUNCTION_ERROR','BUSINESS_REJECTED','ERROR','CONFLICT') ORDER BY seq LIMIT 100",
+                                "SELECT seq,record_key,state,outcome FROM tasks WHERE job=? AND seq>? AND outcome IN ('FAILED','FUNCTION_ERROR','BUSINESS_REJECTED','ERROR','CONFLICT') ORDER BY seq LIMIT ?",
                                 id,
-                                after);
+                                after,
+                                PLAN_PAGE_SIZE);
                 var r = s.executeQuery()) {
             while (r.next())
                 rows.add(
@@ -543,9 +552,10 @@ public final class SqliteJournal implements AutoCloseable {
         List<Map<String, Object>> rows = new ArrayList<>();
         try (var s =
                         statement(
-                                "SELECT seq,time,event,detail FROM audit WHERE job=? AND seq>? ORDER BY seq LIMIT 500",
+                                "SELECT seq,time,event,detail FROM audit WHERE job=? AND seq>? ORDER BY seq LIMIT ?",
                                 id,
-                                after);
+                                after,
+                                REPORT_WINDOW_SIZE);
                 var r = s.executeQuery()) {
             while (r.next())
                 rows.add(
@@ -597,14 +607,6 @@ public final class SqliteJournal implements AutoCloseable {
             throw e;
         } finally {
             db.setAutoCommit(true);
-        }
-    }
-
-    static MessageDigest sha256() {
-        try {
-            return MessageDigest.getInstance("SHA-256");
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException(e);
         }
     }
 

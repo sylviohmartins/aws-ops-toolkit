@@ -1,5 +1,6 @@
 toolkit:
-  environment: HML
-  write-enabled: false
   aws:
     enabled: false
+  core:
+    environment: HML
+    write-enabled: false

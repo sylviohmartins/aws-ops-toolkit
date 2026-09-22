@@ -1,5 +1,6 @@
 package io.github.awsopstoolkit.runtime;
 
+import io.github.awsopstoolkit.configuration.HttpProperties;
 import java.util.*;
 import software.amazon.awssdk.core.SdkBytes;
 import software.amazon.awssdk.core.sync.RequestBody;
@@ -19,7 +20,7 @@ public final class PaymentWorkflow extends DynamoWorkflow {
     private final LambdaClient lambda;
     private final S3Client s3;
     private final PaymentGateway http;
-    private final RuntimeProperties settings;
+    private final HttpProperties settings;
 
     public PaymentWorkflow(
             DynamoDbClient dynamo,
@@ -28,7 +29,7 @@ public final class PaymentWorkflow extends DynamoWorkflow {
             LambdaClient lambda,
             S3Client s3,
             PaymentGateway http,
-            RuntimeProperties settings) {
+            HttpProperties settings) {
         super(dynamo);
         this.sqs = sqs;
         this.sns = sns;

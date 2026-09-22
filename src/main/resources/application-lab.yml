@@ -1,25 +1,27 @@
 toolkit:
-  environment: LOCAL
   aws:
     enabled: false
     expected-account: "123456789012"
     region: us-east-1
-operations:
-  enabled: true
-  writes: true
-  lab-endpoint: http://127.0.0.1:4566
-  payment-endpoint: http://127.0.0.1:8091
-  payment-hosts: [127.0.0.1]
-  principals: ["arn:aws:sts::123456789012:user/moto"]
-  resources:
-    - lab-payments
-    - lab-consumed
-    - http://127.0.0.1:4566/123456789012/lab-events
-    - http://127.0.0.1:4566/123456789012/lab-dlq
-    - http://127.0.0.1:4566/123456789012/lab-replay
-    - http://127.0.0.1:4566/123456789012/lab-sns
-    - arn:aws:sns:us-east-1:123456789012:lab-events
-    - lab-reconcile:approved
-    - lab-evidence
-    - lab-archive
-    - http://127.0.0.1:8091
+  core:
+    environment: LOCAL
+  http:
+    payment-endpoint: http://127.0.0.1:8091
+    payment-hosts: [127.0.0.1]
+  operations:
+    enabled: true
+    writes: true
+    lab-endpoint: http://127.0.0.1:4566
+    principals: ["arn:aws:sts::123456789012:user/moto"]
+    resources:
+      - lab-payments
+      - lab-consumed
+      - http://127.0.0.1:4566/123456789012/lab-events
+      - http://127.0.0.1:4566/123456789012/lab-dlq
+      - http://127.0.0.1:4566/123456789012/lab-replay
+      - http://127.0.0.1:4566/123456789012/lab-sns
+      - arn:aws:sns:us-east-1:123456789012:lab-events
+      - lab-reconcile:approved
+      - lab-evidence
+      - lab-archive
+      - http://127.0.0.1:8091

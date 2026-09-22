@@ -2,6 +2,7 @@ package io.github.awsopstoolkit.checkpoint;
 
 import io.github.awsopstoolkit.configuration.ToolkitProperties;
 import io.github.awsopstoolkit.operation.OperationSnapshot;
+import io.github.awsopstoolkit.operation.SyntheticOperationLimits;
 import jakarta.annotation.PreDestroy;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -17,6 +18,8 @@ import tools.jackson.databind.ObjectMapper;
 /** Atomic snapshots for the deterministic demo, NOT a production write ledger. */
 @Component
 public final class FileCheckpointStore implements AutoCloseable {
+    private static final int MAX_CHECKPOINT_PAGE_SIZE = 1_000;
+
     private final Path root;
     private final ObjectMapper mapper;
     private final FileChannel lockChannel;
@@ -64,9 +67,9 @@ public final class FileCheckpointStore implements AutoCloseable {
                 || result.definitionVersion().isBlank()
                 || !id.equals(result.operationId())
                 || result.pageSize() < 1
-                || result.pageSize() > 1000
+                || result.pageSize() > MAX_CHECKPOINT_PAGE_SIZE
                 || result.total() < 1
-                || result.total() > 10000000
+                || result.total() > SyntheticOperationLimits.MAX_RECORDS
                 || result.cursor() < 0
                 || result.cursor() > result.total()
                 || (result.cursor() != result.total()

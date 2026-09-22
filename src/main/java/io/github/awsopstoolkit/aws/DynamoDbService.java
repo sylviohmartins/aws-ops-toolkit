@@ -1,5 +1,6 @@
 package io.github.awsopstoolkit.aws;
 
+import io.github.awsopstoolkit.dynamodb.DynamoLimits;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -35,8 +36,9 @@ public final class DynamoDbService {
         this.client = Objects.requireNonNull(client);
         this.gate = Objects.requireNonNull(gate);
         this.authorization = Objects.requireNonNull(authorization);
-        if (maxPageItems < 1 || maxPageItems > 10_000) {
-            throw new IllegalArgumentException("maxPageItems must be between 1 and 10000");
+        if (maxPageItems < 1 || maxPageItems > DynamoLimits.MAX_PAGE_ITEMS) {
+            throw new IllegalArgumentException(
+                    "maxPageItems must be between 1 and " + DynamoLimits.MAX_PAGE_ITEMS);
         }
         this.maxPageItems = maxPageItems;
     }
@@ -53,8 +55,9 @@ public final class DynamoDbService {
                 request.requestItems().values().stream()
                         .mapToInt(value -> value.keys().size())
                         .sum();
-        if (keys < 1 || keys > 100) {
-            throw new IllegalArgumentException("BatchGet requires 1 to 100 keys");
+        if (keys < 1 || keys > DynamoLimits.MAX_BATCH_GET_KEYS) {
+            throw new IllegalArgumentException(
+                    "BatchGet requires 1 to " + DynamoLimits.MAX_BATCH_GET_KEYS + " keys");
         }
         return gate.call(() -> client.batchGetItem(request));
     }
@@ -106,9 +109,9 @@ public final class DynamoDbService {
             throws Exception {
         requirePages(maxPagesPerSegment);
         if (totalSegments < 1
-                || totalSegments > 1_000_000
+                || totalSegments > DynamoLimits.MAX_TOTAL_SCAN_SEGMENTS
                 || maxConcurrentSegments < 1
-                || maxConcurrentSegments > 256) {
+                || maxConcurrentSegments > DynamoLimits.MAX_ACTIVE_SCAN_WORKERS) {
             throw new IllegalArgumentException("Invalid segment or worker limit");
         }
         if (template.segment() != null
@@ -260,8 +263,11 @@ public final class DynamoDbService {
     public BatchWriteItemResponse batchWrite(BatchWriteItemRequest request)
             throws InterruptedException {
         int count = request.requestItems().values().stream().mapToInt(List::size).sum();
-        if (count < 1 || count > 25) {
-            throw new IllegalArgumentException("BatchWrite requires 1 to 25 requests");
+        if (count < 1 || count > DynamoLimits.MAX_BATCH_WRITE_REQUESTS) {
+            throw new IllegalArgumentException(
+                    "BatchWrite requires 1 to "
+                            + DynamoLimits.MAX_BATCH_WRITE_REQUESTS
+                            + " requests");
         }
         return gate.call(
                 () -> {
@@ -286,11 +292,13 @@ public final class DynamoDbService {
     public TransactWriteItemsResponse transactWrite(TransactWriteItemsRequest request)
             throws InterruptedException {
         if (request.transactItems().isEmpty()
-                || request.transactItems().size() > 100
+                || request.transactItems().size() > DynamoLimits.MAX_TRANSACTION_ACTIONS
                 || request.clientRequestToken() == null
                 || request.clientRequestToken().isBlank()) {
             throw new IllegalArgumentException(
-                    "Transaction requires 1 to 100 actions and a stable client request token");
+                    "Transaction requires 1 to "
+                            + DynamoLimits.MAX_TRANSACTION_ACTIONS
+                            + " actions and a stable client request token");
         }
         return gate.call(
                 () -> {

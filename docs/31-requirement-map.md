@@ -34,3 +34,5 @@ Nome definitivo: **aws-ops-toolkit**. A numeração abaixo corresponde às seç�
 | 75–76 sucesso/design | [Resumo](00-overview.md), [blueprint](26-implementation-blueprint.md), [runtime](32-operational-runtime.md), [roadmap](20-implementation-roadmap.md) | Operações reutilizáveis concretas no lab; liberação fora dele condicionada aos gates |
 
 Não existe rollback universal, credencial permanente, mecanismo de elevação de privilégio ou promessa de exactly-once entre serviços. O runtime implementa controle local e integração emulada; os capítulos de arquitetura e o roadmap continuam sendo necessários para identificar controles corporativos e validações fora do laboratório.
+
+O prompt complementar de utilitários, configuração, constantes, modelagem, reuso e evolutividade possui rastreabilidade própria requisito a requisito em [35-complement-requirement-map.md](35-complement-requirement-map.md), com estratégia A–P em [33-reuse-extensibility.md](33-reuse-extensibility.md), catálogo em [34-configuration-catalog.md](34-configuration-catalog.md) e receitas operacionais em `docs/development/`.

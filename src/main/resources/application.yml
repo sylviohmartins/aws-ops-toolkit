@@ -4,67 +4,83 @@ spring:
   threads:
     virtual:
       enabled: true
-  lifecycle:
-    timeout-per-shutdown-phase: 30s
-  jackson:
-    deserialization:
-      fail-on-unknown-properties: true
 server:
   address: 127.0.0.1
-  port: 8080
-  shutdown: graceful
   error:
     include-message: never
     include-stacktrace: never
+  shutdown: graceful
 management:
   endpoints:
     web:
       exposure:
-        include: health,metrics
+        include: health,info,metrics,prometheus
   endpoint:
     health:
       show-details: never
-logging:
-  file:
-    name: .aws-ops-toolkit/logs/application.log
-  logback:
-    rollingpolicy:
-      max-file-size: 10MB
-      max-history: 7
-      total-size-cap: 100MB
-  structured:
-    format:
-      file: logstash
 toolkit:
-  environment: LOCAL
-  data-directory: .aws-ops-toolkit/data
-  minimum-free-bytes: 1073741824
-  max-concurrent-operations: 2
-  page-size: 100
-  write-enabled: false
-  local-token: ${TOOLKIT_LOCAL_TOKEN:}
   aws:
+    acquisition-timeout: 2s
+    api-call-attempt-timeout: 30s
+    api-call-timeout: 35s
+    connection-timeout: 3s
     enabled: false
-    region: ${AWS_REGION:us-east-1}
-    profile: ${AWS_PROFILE:}
-    expected-account: ${TOOLKIT_EXPECTED_ACCOUNT:}
+    expected-account: "${TOOLKIT_EXPECTED_ACCOUNT:}"
     max-connections: 8
-    connection-timeout-millis: 3000
-    acquisition-timeout-millis: 2000
-    socket-timeout-millis: 25000
-    max-idle-millis: 30000
-    api-call-attempt-timeout-millis: 30000
-    api-call-timeout-millis: 35000
-operations:
-  enabled: false
-  writes: false
-  requests-per-second: 10
-  workers: 2
-  page-size: 100
-  plan-lifetime-seconds: 86400
-  approval-lifetime-seconds: 900
-  retention-days: 30
-  http-connect-timeout-millis: 3000
-  http-response-timeout-millis: 10000
-  http-max-attempts: 3
-  http-max-retry-after-seconds: 10
+    max-idle: 30s
+    profile: "${TOOLKIT_AWS_PROFILE:}"
+    region: us-east-1
+    socket-timeout: 25s
+  core:
+    data-directory: .aws-ops-toolkit/data
+    environment: LOCAL
+    local-token: "${TOOLKIT_CORE_LOCAL_TOKEN:}"
+    max-concurrent-operations: 2
+    minimum-free-space: 1GB
+    page-size: 100
+    write-enabled: false
+  dynamodb:
+    page-size: 100
+    tables: {}
+  http:
+    connect-timeout: 3s
+    max-attempts: 3
+    max-response-body: 64KB
+    max-retry-after: 10s
+    payment-hosts: []
+    response-timeout: 10s
+  operations:
+    approval-lifetime: 15m
+    circuit-failures-before-open: 5
+    circuit-open-duration: 10s
+    dry-run-sample-size: 10
+    enabled: false
+    healthy-responses-before-increase: 20
+    estimated-bytes-per-record: 8KB
+    page-size: 100
+    plan-lifetime: 24h
+    principals: []
+    read-max-attempts: 3
+    requests-per-second: 10
+    resources: []
+    retention: 30d
+    retry-base-backoff: 100ms
+    shutdown-timeout: 25s
+    workers: 2
+    writes: false
+  report:
+    csv-delimiter: ','
+    flush-every-records: 500
+    max-concurrent-reports: 1
+    protect-spreadsheet-formulas: true
+    xlsx-estimated-bytes-per-row: 1024
+    xlsx-max-data-rows: 1000000
+    xlsx-row-window: 100
+  sqs:
+    visibility-timeout: 120s
+logging:
+  level:
+    root: INFO
+    software.amazon.awssdk: WARN
+  pattern:
+    console: "%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %-5level %logger{36} -%kvp- %msg%n"

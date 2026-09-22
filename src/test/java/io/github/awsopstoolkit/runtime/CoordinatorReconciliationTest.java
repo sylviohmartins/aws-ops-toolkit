@@ -12,24 +12,8 @@ import tools.jackson.databind.json.JsonMapper;
 class CoordinatorReconciliationTest {
     @TempDir Path directory;
     private final RuntimeProperties settings =
-            new RuntimeProperties(
-                    true,
-                    true,
-                    null,
-                    Set.of("table"),
-                    Set.of("principal"),
-                    1000,
-                    2,
-                    10,
-                    86400,
-                    900,
-                    30,
-                    null,
-                    Set.of(),
-                    3000,
-                    10000,
-                    3,
-                    10);
+            RuntimeTestFixtures.runtime(
+                    true, null, Set.of("table"), Set.of("principal"), 1000, 2, 10);
 
     @Test
     void unknownValueProducingEffectCannotBeConfirmedWithFabricatedResult() throws Exception {

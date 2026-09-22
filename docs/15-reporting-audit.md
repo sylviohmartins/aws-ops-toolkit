@@ -2,7 +2,7 @@
 
 Pesquisa: 18/09/2026. **DECISÃO:** CSV streaming é formato primário de detalhes; JSON resume a operação; XLSX é visão resumida opcional, gerada depois do processamento. No skeleton há saída CSV LOCAL. O ledger transacional, XLSX, upload e audit trail de produção descritos abaixo são blueprint a implementar.
 
-**Implementação inicial concreta:** `FileCheckpointStore` guarda `checkpoint.json` e `chunk-<cursor>.csv` em `<toolkit.data-directory>/<operationId>/`. O download escreve header e concatena apenas chunks confirmados pelo cursor; cada página é mantida temporariamente em memória, sem acumular a massa completa. Um chunk órfão pode ser substituído por replay determinístico. A árvore `reports/` e os manifestos abaixo são alvo CORE, não nomes de arquivos já produzidos pela demonstração. Reserva inicial de disco no YAML é 1 GiB; a proposta produtiva de 2 GiB adiante exige calibração e não descreve esse default.
+**Implementação inicial concreta:** `FileCheckpointStore` guarda `checkpoint.json` e `chunk-<cursor>.csv` em `<toolkit.core.data-directory>/<operationId>/`. O download escreve header e concatena apenas chunks confirmados pelo cursor; cada página é mantida temporariamente em memória, sem acumular a massa completa. Um chunk órfão pode ser substituído por replay determinístico. A árvore `reports/` e os manifestos abaixo são alvo CORE, não nomes de arquivos já produzidos pela demonstração. Reserva inicial de disco no YAML é 1 GiB; a proposta produtiva de 2 GiB adiante exige calibração e não descreve esse default.
 
 ## Artefatos e contrato
 

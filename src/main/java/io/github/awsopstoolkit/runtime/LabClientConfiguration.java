@@ -1,13 +1,14 @@
 package io.github.awsopstoolkit.runtime;
 
+import io.github.awsopstoolkit.configuration.AwsProperties;
 import io.github.awsopstoolkit.configuration.ToolkitProperties;
 import java.net.URI;
-import java.time.Duration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.*;
 import software.amazon.awssdk.auth.credentials.*;
 import software.amazon.awssdk.awscore.client.builder.AwsSyncClientBuilder;
 import software.amazon.awssdk.core.client.config.ClientOverrideConfiguration;
+import software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedClient;
 import software.amazon.awssdk.http.SdkHttpClient;
 import software.amazon.awssdk.http.apache5.Apache5HttpClient;
 import software.amazon.awssdk.regions.Region;
@@ -20,31 +21,40 @@ import software.amazon.awssdk.services.sqs.SqsClient;
 import software.amazon.awssdk.services.sts.StsClient;
 
 @Configuration
-@ConditionalOnProperty(name = "operations.lab-endpoint")
+@ConditionalOnProperty(name = "toolkit.operations.lab-endpoint")
 public class LabClientConfiguration {
-    private final URI endpoint;
+    private static final int SDK_MAX_ATTEMPTS = 1;
+    private static final String EMULATOR_ACCESS_KEY = "testing";
+    private static final String EMULATOR_SECRET_KEY = "testing";
 
-    public LabClientConfiguration(RuntimeProperties runtime, ToolkitProperties toolkit) {
+    private final URI endpoint;
+    private final AwsProperties aws;
+
+    public LabClientConfiguration(
+            RuntimeProperties runtime, ToolkitProperties toolkit, AwsProperties aws) {
+        this.aws = aws;
         endpoint = runtime.labEndpoint();
         if (toolkit.environment() != ToolkitProperties.Environment.LOCAL
-                || toolkit.aws().enabled()
+                || aws.enabled()
                 || !SetHolder.HOSTS.contains(endpoint.getHost())
                 || !"http".equals(endpoint.getScheme())
                 || endpoint.getUserInfo() != null
                 || endpoint.getQuery() != null
                 || endpoint.getFragment() != null
-                || !SetHolder.PATHS.contains(endpoint.getPath()))
+                || !SetHolder.PATHS.contains(endpoint.getPath())) {
             throw new IllegalArgumentException(
                     "Emulator endpoint requires LOCAL, loopback and disabled real AWS clients");
+        }
     }
 
     @Bean(destroyMethod = "close")
     SdkHttpClient labTransport() {
         return Apache5HttpClient.builder()
-                .maxConnections(8)
-                .connectionTimeout(Duration.ofSeconds(2))
-                .connectionAcquisitionTimeout(Duration.ofSeconds(2))
-                .socketTimeout(Duration.ofSeconds(30))
+                .maxConnections(aws.maxConnections())
+                .connectionTimeout(aws.connectionTimeout())
+                .connectionAcquisitionTimeout(aws.acquisitionTimeout())
+                .socketTimeout(aws.socketTimeout())
+                .connectionMaxIdleTime(aws.maxIdle())
                 .build();
     }
 
@@ -55,17 +65,20 @@ public class LabClientConfiguration {
                     C>
             C build(B builder, SdkHttpClient transport) {
         return builder.endpointOverride(endpoint)
-                .region(Region.US_EAST_1)
+                .region(Region.of(aws.region()))
                 .credentialsProvider(
                         StaticCredentialsProvider.create(
-                                AwsBasicCredentials.create("testing", "testing")))
+                                AwsBasicCredentials.create(
+                                        EMULATOR_ACCESS_KEY, EMULATOR_SECRET_KEY)))
                 .httpClient(transport)
                 .overrideConfiguration(
                         ClientOverrideConfiguration.builder()
                                 .retryStrategy(
-                                        StandardRetryStrategy.builder().maxAttempts(1).build())
-                                .apiCallAttemptTimeout(Duration.ofSeconds(35))
-                                .apiCallTimeout(Duration.ofSeconds(40))
+                                        StandardRetryStrategy.builder()
+                                                .maxAttempts(SDK_MAX_ATTEMPTS)
+                                                .build())
+                                .apiCallAttemptTimeout(aws.apiCallAttemptTimeout())
+                                .apiCallTimeout(aws.apiCallTimeout())
                                 .build())
                 .build();
     }
@@ -73,6 +86,11 @@ public class LabClientConfiguration {
     @Bean(destroyMethod = "close")
     DynamoDbClient labDynamo(SdkHttpClient h) {
         return build(DynamoDbClient.builder(), h);
+    }
+
+    @Bean
+    DynamoDbEnhancedClient labEnhancedDynamo(DynamoDbClient dynamo) {
+        return DynamoDbEnhancedClient.builder().dynamoDbClient(dynamo).build();
     }
 
     @Bean(destroyMethod = "close")

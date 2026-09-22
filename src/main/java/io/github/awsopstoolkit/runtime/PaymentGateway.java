@@ -1,5 +1,6 @@
 package io.github.awsopstoolkit.runtime;
 
+import io.github.awsopstoolkit.configuration.HttpProperties;
 import java.io.*;
 import java.net.URI;
 import java.net.http.*;
@@ -10,65 +11,48 @@ import java.util.List;
 import java.util.concurrent.*;
 import tools.jackson.databind.JsonNode;
 
-/** Read-only HTTP: bounded body, end-to-end deadline, three attempts and no redirects. */
+/**
+ * Read-only HTTP: bounded body, configured attempt budget, end-to-end deadline and no redirects.
+ */
 public final class PaymentGateway implements AutoCloseable {
     private final HttpClient client;
     private final URI base;
     private final Duration timeout;
     private final int maxAttempts;
-    private final int maxRetryAfterSeconds;
+    private final Duration maxRetryAfter;
+    private final long maxResponseBodyBytes;
 
-    public PaymentGateway(RuntimeProperties settings) {
-        this(
-                settings,
-                Duration.ofMillis(settings.httpResponseTimeoutMillis()),
-                Duration.ofMillis(settings.httpConnectTimeoutMillis()),
-                settings.httpMaxAttempts(),
-                settings.httpMaxRetryAfterSeconds());
+    public PaymentGateway(HttpProperties http, RuntimeProperties runtime) {
+        this(http, runtime, http.responseTimeout());
     }
 
-    PaymentGateway(RuntimeProperties settings, Duration timeout) {
-        this(
-                settings,
-                timeout,
-                Duration.ofMillis(settings.httpConnectTimeoutMillis()),
-                settings.httpMaxAttempts(),
-                settings.httpMaxRetryAfterSeconds());
+    PaymentGateway(HttpProperties http, RuntimeProperties runtime, Duration timeout) {
+        this(http, runtime, timeout, http.connectTimeout());
     }
 
     private PaymentGateway(
-            RuntimeProperties settings,
+            HttpProperties http,
+            RuntimeProperties runtime,
             Duration timeout,
-            Duration connectTimeout,
-            int maxAttempts,
-            int maxRetryAfterSeconds) {
-        if (timeout == null
-                || timeout.isZero()
-                || timeout.isNegative()
-                || timeout.compareTo(Duration.ofSeconds(60)) > 0
-                || connectTimeout == null
-                || connectTimeout.isZero()
-                || connectTimeout.isNegative()
-                || maxAttempts < 1
-                || maxAttempts > 5
-                || maxRetryAfterSeconds < 0
-                || maxRetryAfterSeconds > 60)
-            throw new IllegalArgumentException("Invalid HTTP resilience configuration");
+            Duration connectTimeout) {
+        if (timeout == null || timeout.isZero() || timeout.isNegative())
+            throw new IllegalArgumentException("Invalid HTTP response timeout");
         this.timeout = timeout;
-        this.maxAttempts = maxAttempts;
-        this.maxRetryAfterSeconds = maxRetryAfterSeconds;
+        this.maxAttempts = http.maxAttempts();
+        this.maxRetryAfter = http.maxRetryAfter();
+        this.maxResponseBodyBytes = http.maxResponseBody().toBytes();
         this.client =
                 HttpClient.newBuilder()
                         .connectTimeout(connectTimeout)
                         .followRedirects(HttpClient.Redirect.NEVER)
                         .build();
-        base = settings.paymentEndpoint();
+        base = http.paymentEndpoint();
         if (base == null) return;
         boolean local =
-                settings.labEndpoint() != null
+                runtime.labEndpoint() != null
                         && java.util.Set.of("127.0.0.1", "localhost").contains(base.getHost());
         if ((!"https".equals(base.getScheme()) && !local)
-                || !settings.paymentHosts().contains(base.getHost())
+                || !http.paymentHosts().contains(base.getHost())
                 || base.getUserInfo() != null
                 || base.getQuery() != null
                 || base.getFragment() != null)
@@ -88,7 +72,7 @@ public final class PaymentGateway implements AutoCloseable {
                 if (attempt == maxAttempts - 1) throw new JobStopped(JobState.PAUSED);
                 context.externalRetry();
                 io.micrometer.core.instrument.Metrics.counter("toolkit.http.retries").increment();
-                DispatchLimiter.backoff(attempt);
+                context.backoff(attempt);
                 continue;
             }
             int status = response.statusCode();
@@ -101,11 +85,12 @@ public final class PaymentGateway implements AutoCloseable {
                 context.externalFailure(status == 429);
                 if (attempt == maxAttempts - 1) throw new JobStopped(JobState.PAUSED);
                 long seconds = retryAfter(response.headers().firstValue("Retry-After").orElse("0"));
-                if (seconds > maxRetryAfterSeconds) throw new JobStopped(JobState.PAUSED);
+                if (Duration.ofSeconds(seconds).compareTo(maxRetryAfter) > 0)
+                    throw new JobStopped(JobState.PAUSED);
                 context.externalRetry();
                 io.micrometer.core.instrument.Metrics.counter("toolkit.http.retries").increment();
-                if (seconds > 0) Thread.sleep(seconds * 1000);
-                else DispatchLimiter.backoff(attempt);
+                if (seconds > 0) Thread.sleep(Duration.ofSeconds(seconds));
+                else context.backoff(attempt);
                 continue;
             }
             if (status != 200) throw new IllegalArgumentException("Payment response rejected");
@@ -128,7 +113,8 @@ public final class PaymentGateway implements AutoCloseable {
                         .GET();
         String token = System.getenv("TOOLKIT_PAYMENT_TOKEN");
         if (token != null && !token.isBlank()) builder.header("Authorization", "Bearer " + token);
-        var future = client.sendAsync(builder.build(), info -> new LimitedBody());
+        var future =
+                client.sendAsync(builder.build(), info -> new LimitedBody(maxResponseBodyBytes));
         try {
             return future.get(Math.max(1, timeout.toMillis()), TimeUnit.MILLISECONDS);
         } catch (InterruptedException e) {
@@ -168,7 +154,12 @@ public final class PaymentGateway implements AutoCloseable {
     private static final class LimitedBody implements HttpResponse.BodySubscriber<byte[]> {
         private final CompletableFuture<byte[]> result = new CompletableFuture<>();
         private final ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        private final long maxBytes;
         private Flow.Subscription subscription;
+
+        private LimitedBody(long maxBytes) {
+            this.maxBytes = maxBytes;
+        }
 
         @Override
         public CompletionStage<byte[]> getBody() {
@@ -184,7 +175,7 @@ public final class PaymentGateway implements AutoCloseable {
         @Override
         public void onNext(List<ByteBuffer> buffers) {
             for (var buffer : buffers) {
-                if ((long) bytes.size() + buffer.remaining() > 65536) {
+                if ((long) bytes.size() + buffer.remaining() > maxBytes) {
                     subscription.cancel();
                     result.completeExceptionally(new IOException("Response body limit"));
                     return;

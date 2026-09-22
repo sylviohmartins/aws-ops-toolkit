@@ -6,21 +6,21 @@ if (!$env:JAVA_HOME -or !(Test-Path -LiteralPath $jar)) { throw 'Build with JDK 
 $java = Join-Path $env:JAVA_HOME 'bin/java.exe'
 $runDirectory = Join-Path $projectRoot ('target/lab-smoke/' + [guid]::NewGuid().ToString())
 New-Item -ItemType Directory -Path $runDirectory -Force | Out-Null
-$oldToken = $env:TOOLKIT_LOCAL_TOKEN
+$oldToken = $env:TOOLKIT_CORE_LOCAL_TOKEN
 $bytes = New-Object byte[] 32
 $rng = [Security.Cryptography.RandomNumberGenerator]::Create()
 $rng.GetBytes($bytes)
 $rng.Dispose()
-$env:TOOLKIT_LOCAL_TOKEN = [Convert]::ToBase64String($bytes)
-$headers = @{Authorization = 'Bearer ' + $env:TOOLKIT_LOCAL_TOKEN}
+$env:TOOLKIT_CORE_LOCAL_TOKEN = [Convert]::ToBase64String($bytes)
+$headers = @{Authorization = 'Bearer ' + $env:TOOLKIT_CORE_LOCAL_TOKEN}
 $base = "http://127.0.0.1:$Port"
 $script:process = $null
 $script:launch = 0
 function Start-LabToolkit {
     $script:launch++
     $arguments = @('--enable-native-access=ALL-UNNAMED', '-jar', ('"' + $jar + '"'), '--spring.profiles.active=lab', "--server.port=$Port",
-        ('"--toolkit.data-directory=' + (Join-Path $runDirectory 'data') + '"'),
-        '--toolkit.minimum-free-bytes=1048576', '--operations.requests-per-second=20', '--operations.page-size=5')
+        ('"--toolkit.core.data-directory=' + (Join-Path $runDirectory 'data') + '"'),
+        '--toolkit.core.minimum-free-space=1MB', '--toolkit.operations.requests-per-second=20', '--toolkit.operations.page-size=5')
     $script:process = Start-Process -FilePath $java -ArgumentList $arguments -PassThru -WindowStyle Hidden -WorkingDirectory $runDirectory `
         -RedirectStandardOutput (Join-Path $runDirectory "stdout-$script:launch.log") `
         -RedirectStandardError (Join-Path $runDirectory "stderr-$script:launch.log")
@@ -119,5 +119,5 @@ try {
     Write-Output "LAB SMOKE PASS: durable planning, pause, forced restart, approval, canary, promotion, CSV/XLSX and manifest. Evidence: $runDirectory"
 } finally {
     if ($script:process -and !$script:process.HasExited) { Stop-Process -Id $script:process.Id -Force; $script:process.WaitForExit() }
-    $env:TOOLKIT_LOCAL_TOKEN = $oldToken
+    $env:TOOLKIT_CORE_LOCAL_TOKEN = $oldToken
 }

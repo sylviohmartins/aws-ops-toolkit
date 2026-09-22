@@ -1,0 +1,96 @@
+spring:
+  application:
+    name: aws-ops-toolkit
+  threads:
+    virtual:
+      enabled: true
+server:
+  address: 127.0.0.1
+  error:
+    include-message: never
+    include-stacktrace: never
+  shutdown: graceful
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: never
+toolkit:
+  # AWS client identity, region and transport limits.
+  aws:
+    acquisition-timeout: 2s
+    api-call-attempt-timeout: 30s
+    api-call-timeout: 35s
+    connection-timeout: 3s
+    enabled: false
+    expected-account: "${TOOLKIT_EXPECTED_ACCOUNT:}"
+    max-connections: 8
+    max-idle: 30s
+    profile: "${TOOLKIT_AWS_PROFILE:}"
+    region: us-east-1
+    socket-timeout: 25s
+  # Local safety defaults. Supply the loopback token externally.
+  core:
+    data-directory: .aws-ops-toolkit/data
+    environment: LOCAL
+    local-token: "${TOOLKIT_LOCAL_TOKEN:}"
+    max-concurrent-operations: 2
+    minimum-free-space: 1GB
+    page-size: 100
+    write-enabled: false
+  # Logical table mappings and bounded typed access.
+  dynamodb:
+    page-size: 100
+    tables: {}
+  # Downstream HTTP budgets and allowlists.
+  http:
+    connect-timeout: 3s
+    max-attempts: 3
+    max-response-body: 64KB
+    max-retry-after: 10s
+    payment-endpoint: "https://example.invalid"
+    payment-hosts:
+      - "example.invalid"
+    response-timeout: 10s
+  # Durable runtime, disabled and read-only by default.
+  operations:
+    approval-lifetime: 15m
+    circuit-failures-before-open: 5
+    circuit-open-duration: 10s
+    dry-run-sample-size: 10
+    enabled: false
+    healthy-responses-before-increase: 20
+    estimated-bytes-per-record: 8KB
+    lab-endpoint: "${TOOLKIT_LAB_ENDPOINT:}"
+    page-size: 100
+    plan-lifetime: 24h
+    principals: []
+    read-max-attempts: 3
+    requests-per-second: 10
+    resources: []
+    retention: 30d
+    retry-base-backoff: 100ms
+    shutdown-timeout: 25s
+    workers: 2
+    writes: false
+  # Streaming report limits and spreadsheet safety.
+  report:
+    csv-delimiter: ','
+    flush-every-records: 500
+    max-concurrent-reports: 1
+    protect-spreadsheet-formulas: true
+    xlsx-estimated-bytes-per-row: 1024
+    xlsx-max-data-rows: 1000000
+    xlsx-row-window: 100
+  # Receive lease used only by explicit SQS workflows.
+  sqs:
+    visibility-timeout: 120s
+logging:
+  level:
+    root: INFO
+    software.amazon.awssdk: WARN
+  pattern:
+    console: "%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %-5level %logger{36} -%kvp- %msg%n"

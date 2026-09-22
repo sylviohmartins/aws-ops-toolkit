@@ -27,24 +27,8 @@ class ReportSafetyTest {
     @Test
     void onlyOneXlsxProjectionCanConsumeTemporaryDiskAtATime() throws Exception {
         var settings =
-                new RuntimeProperties(
-                        true,
-                        true,
-                        null,
-                        Set.of("table"),
-                        Set.of("principal"),
-                        10,
-                        1,
-                        10,
-                        3600,
-                        60,
-                        30,
-                        null,
-                        Set.of(),
-                        3000,
-                        10000,
-                        3,
-                        10);
+                RuntimeTestFixtures.runtime(
+                        true, null, Set.of("table"), Set.of("principal"), 10, 1, 10);
         try (var journal = new SqliteJournal(directory);
                 var validation = Validation.buildDefaultValidatorFactory();
                 var threads = Executors.newVirtualThreadPerTaskExecutor()) {
@@ -65,7 +49,17 @@ class ReportSafetyTest {
                         new Workflow.Page(List.of(new Workflow.Candidate("id", "{}")), "", true),
                         1);
                 journal.seal(id);
-                var controller = new JobController(coordinator, journal);
+                var controller =
+                        new JobController(
+                                coordinator,
+                                journal,
+                                RuntimeTestFixtures.toolkit(
+                                        io.github.awsopstoolkit.configuration.ToolkitProperties
+                                                .Environment.LOCAL,
+                                        directory,
+                                        false),
+                                RuntimeTestFixtures.report(),
+                                RuntimeTestFixtures.csvFactory());
                 var blocked = new CountDownLatch(1);
                 var release = new CountDownLatch(1);
                 var body =

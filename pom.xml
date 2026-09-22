@@ -18,10 +18,13 @@
         <maven.compiler.release>25</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <aws-sdk.version>2.55.0</aws-sdk.version>
-        <spotless.version>3.3.0</spotless.version>
+        <commons-csv.version>1.14.1</commons-csv.version>
         <google-java-format.version>1.33.0</google-java-format.version>
         <maven-enforcer.version>3.6.2</maven-enforcer.version>
+        <poi-ooxml.version>5.5.1</poi-ooxml.version>
         <spotbugs.version>4.10.4.1</spotbugs.version>
+        <spotless.version>3.3.0</spotless.version>
+        <sqlite-jdbc.version>3.53.4.0</sqlite-jdbc.version>
     </properties>
     <dependencyManagement>
         <dependencies>
@@ -46,27 +49,48 @@
         <dependency><groupId>software.amazon.awssdk</groupId><artifactId>s3</artifactId></dependency>
         <dependency><groupId>software.amazon.awssdk</groupId><artifactId>apache5-client</artifactId></dependency>
         <dependency><groupId>software.amazon.awssdk</groupId><artifactId>dynamodb-enhanced</artifactId></dependency>
-        <dependency><groupId>org.xerial</groupId><artifactId>sqlite-jdbc</artifactId><version>3.53.4.0</version></dependency>
-        <dependency><groupId>org.apache.poi</groupId><artifactId>poi-ooxml</artifactId><version>5.5.1</version></dependency>
+        <dependency><groupId>org.apache.commons</groupId><artifactId>commons-csv</artifactId><version>${commons-csv.version}</version></dependency>
+        <dependency><groupId>org.xerial</groupId><artifactId>sqlite-jdbc</artifactId><version>${sqlite-jdbc.version}</version></dependency>
+        <dependency><groupId>org.apache.poi</groupId><artifactId>poi-ooxml</artifactId><version>${poi-ooxml.version}</version></dependency>
+        <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-configuration-processor</artifactId><optional>true</optional></dependency>
         <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-test</artifactId><scope>test</scope></dependency>
     </dependencies>
     <build>
+        <pluginManagement>
+            <plugins>
+                <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-enforcer-plugin</artifactId><version>${maven-enforcer.version}</version></plugin>
+                <plugin>
+                    <groupId>com.diffplug.spotless</groupId><artifactId>spotless-maven-plugin</artifactId><version>${spotless.version}</version>
+                    <configuration><java><googleJavaFormat><version>${google-java-format.version}</version><style>AOSP</style></googleJavaFormat><removeUnusedImports/></java></configuration>
+                </plugin>
+                <plugin><groupId>com.github.spotbugs</groupId><artifactId>spotbugs-maven-plugin</artifactId><version>${spotbugs.version}</version></plugin>
+            </plugins>
+        </pluginManagement>
         <plugins>
             <plugin><groupId>org.springframework.boot</groupId><artifactId>spring-boot-maven-plugin</artifactId></plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId><artifactId>maven-compiler-plugin</artifactId>
-                <configuration><parameters>true</parameters><showWarnings>true</showWarnings></configuration>
+                <configuration>
+                    <parameters>true</parameters>
+                    <showWarnings>true</showWarnings>
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>org.springframework.boot</groupId>
+                            <artifactId>spring-boot-configuration-processor</artifactId>
+                            <version>${project.parent.version}</version>
+                        </path>
+                    </annotationProcessorPaths>
+                </configuration>
             </plugin>
             <plugin>
-                <groupId>org.apache.maven.plugins</groupId><artifactId>maven-enforcer-plugin</artifactId><version>${maven-enforcer.version}</version>
+                <groupId>org.apache.maven.plugins</groupId><artifactId>maven-enforcer-plugin</artifactId>
                 <executions><execution><id>toolchain</id><goals><goal>enforce</goal></goals><configuration><rules>
                     <requireJavaVersion><version>[25,26)</version></requireJavaVersion>
                     <requireMavenVersion><version>[3.9.12,4)</version></requireMavenVersion>
                 </rules></configuration></execution></executions>
             </plugin>
             <plugin>
-                <groupId>com.diffplug.spotless</groupId><artifactId>spotless-maven-plugin</artifactId><version>${spotless.version}</version>
-                <configuration><java><googleJavaFormat><version>${google-java-format.version}</version><style>AOSP</style></googleJavaFormat><removeUnusedImports/></java></configuration>
+                <groupId>com.diffplug.spotless</groupId><artifactId>spotless-maven-plugin</artifactId>
                 <executions><execution><id>format</id><phase>validate</phase><goals><goal>check</goal></goals></execution></executions>
             </plugin>
         </plugins>
@@ -74,11 +98,65 @@
     <profiles>
         <profile>
             <id>static-analysis</id>
-            <build><plugins><plugin>
-                <groupId>com.github.spotbugs</groupId><artifactId>spotbugs-maven-plugin</artifactId><version>${spotbugs.version}</version>
-                <configuration><effort>Max</effort><threshold>High</threshold><failOnError>true</failOnError></configuration>
-                <executions><execution><phase>verify</phase><goals><goal>check</goal></goals></execution></executions>
-            </plugin></plugins></build>
+            <build><plugins>
+                <plugin>
+                    <groupId>com.github.spotbugs</groupId><artifactId>spotbugs-maven-plugin</artifactId>
+                    <configuration><effort>Max</effort><threshold>High</threshold><failOnError>true</failOnError></configuration>
+                    <executions><execution><phase>verify</phase><goals><goal>check</goal></goals></execution></executions>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId><artifactId>maven-dependency-plugin</artifactId>
+                    <executions><execution><id>dependency-analysis</id><phase>verify</phase><goals><goal>analyze-only</goal></goals>
+                        <configuration>
+                            <failOnWarning>true</failOnWarning>
+                            <ignoredUnusedDeclaredDependencies>
+                                <ignoredUnusedDeclaredDependency>org.springframework.boot:spring-boot-starter-webmvc</ignoredUnusedDeclaredDependency>
+                                <ignoredUnusedDeclaredDependency>org.springframework.boot:spring-boot-starter-validation</ignoredUnusedDeclaredDependency>
+                                <ignoredUnusedDeclaredDependency>org.springframework.boot:spring-boot-starter-security</ignoredUnusedDeclaredDependency>
+                                <ignoredUnusedDeclaredDependency>org.springframework.boot:spring-boot-starter-actuator</ignoredUnusedDeclaredDependency>
+                                <ignoredUnusedDeclaredDependency>org.springframework.boot:spring-boot-starter-test</ignoredUnusedDeclaredDependency>
+                                <ignoredUnusedDeclaredDependency>software.amazon.awssdk:sso</ignoredUnusedDeclaredDependency>
+                                <ignoredUnusedDeclaredDependency>software.amazon.awssdk:ssooidc</ignoredUnusedDeclaredDependency>
+                                <ignoredUnusedDeclaredDependency>org.xerial:sqlite-jdbc</ignoredUnusedDeclaredDependency>
+                                <ignoredUnusedDeclaredDependency>org.springframework.boot:spring-boot-configuration-processor</ignoredUnusedDeclaredDependency>
+                            </ignoredUnusedDeclaredDependencies>
+                            <ignoredUsedUndeclaredDependencies>
+                                <ignoredUsedUndeclaredDependency>org.springframework.boot:spring-boot</ignoredUsedUndeclaredDependency>
+                                <ignoredUsedUndeclaredDependency>org.springframework.boot:spring-boot-autoconfigure</ignoredUsedUndeclaredDependency>
+                                <ignoredUsedUndeclaredDependency>org.springframework.boot:spring-boot-test</ignoredUsedUndeclaredDependency>
+                                <ignoredUsedUndeclaredDependency>org.springframework:spring-beans</ignoredUsedUndeclaredDependency>
+                                <ignoredUsedUndeclaredDependency>org.springframework:spring-core</ignoredUsedUndeclaredDependency>
+                                <ignoredUsedUndeclaredDependency>org.springframework:spring-context</ignoredUsedUndeclaredDependency>
+                                <ignoredUsedUndeclaredDependency>org.springframework:spring-web</ignoredUsedUndeclaredDependency>
+                                <ignoredUsedUndeclaredDependency>org.springframework:spring-webmvc</ignoredUsedUndeclaredDependency>
+                                <ignoredUsedUndeclaredDependency>org.springframework:spring-test</ignoredUsedUndeclaredDependency>
+                                <ignoredUsedUndeclaredDependency>org.springframework.security:spring-security-core</ignoredUsedUndeclaredDependency>
+                                <ignoredUsedUndeclaredDependency>org.springframework.security:spring-security-web</ignoredUsedUndeclaredDependency>
+                                <ignoredUsedUndeclaredDependency>org.springframework.security:spring-security-config</ignoredUsedUndeclaredDependency>
+                                <ignoredUsedUndeclaredDependency>jakarta.annotation:jakarta.annotation-api</ignoredUsedUndeclaredDependency>
+                                <ignoredUsedUndeclaredDependency>jakarta.validation:jakarta.validation-api</ignoredUsedUndeclaredDependency>
+                                <ignoredUsedUndeclaredDependency>io.micrometer:micrometer-core</ignoredUsedUndeclaredDependency>
+                                <ignoredUsedUndeclaredDependency>org.apache.tomcat.embed:tomcat-embed-core</ignoredUsedUndeclaredDependency>
+                                <ignoredUsedUndeclaredDependency>org.slf4j:slf4j-api</ignoredUsedUndeclaredDependency>
+                                <ignoredUsedUndeclaredDependency>org.mockito:mockito-core</ignoredUsedUndeclaredDependency>
+                                <ignoredUsedUndeclaredDependency>org.junit.jupiter:junit-jupiter-api</ignoredUsedUndeclaredDependency>
+                                <ignoredUsedUndeclaredDependency>tools.jackson.core:jackson-core</ignoredUsedUndeclaredDependency>
+                                <ignoredUsedUndeclaredDependency>tools.jackson.core:jackson-databind</ignoredUsedUndeclaredDependency>
+                                <ignoredUsedUndeclaredDependency>software.amazon.awssdk:http-client-spi</ignoredUsedUndeclaredDependency>
+                                <ignoredUsedUndeclaredDependency>software.amazon.awssdk:regions</ignoredUsedUndeclaredDependency>
+                                <ignoredUsedUndeclaredDependency>software.amazon.awssdk:retries-spi</ignoredUsedUndeclaredDependency>
+                                <ignoredUsedUndeclaredDependency>software.amazon.awssdk:retries</ignoredUsedUndeclaredDependency>
+                                <ignoredUsedUndeclaredDependency>software.amazon.awssdk:auth</ignoredUsedUndeclaredDependency>
+                                <ignoredUsedUndeclaredDependency>software.amazon.awssdk:sdk-core</ignoredUsedUndeclaredDependency>
+                                <ignoredUsedUndeclaredDependency>software.amazon.awssdk:aws-core</ignoredUsedUndeclaredDependency>
+                            </ignoredUsedUndeclaredDependencies>
+                            <ignoredNonTestScopedDependencies>
+                                <ignoredNonTestScopedDependency>tools.jackson.core:jackson-core</ignoredNonTestScopedDependency>
+                            </ignoredNonTestScopedDependencies>
+                        </configuration>
+                    </execution></executions>
+                </plugin>
+            </plugins></build>
         </profile>
     </profiles>
 </project>

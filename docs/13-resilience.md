@@ -6,15 +6,15 @@ Fontes consultadas em **2026-09-18**. **DECISÃO:** cada fronteira tem um único
 
 | Fronteira | Dono | Política inicial proposta |
 |---|---|---|
-| Leitura AWS idempotente | SDK `StandardRetryStrategy` | `maxAttempts=3` explícito; timeouts por tentativa e total |
-| Escrita com condição/token comprovadamente seguro | SDK, com política por operação | Até 3 tentativas dentro do orçamento; tratar resposta ambígua por reconciliação |
+| Leitura AWS idempotente | Runtime `JobContext.read` | `toolkit.operations.read-max-attempts`, full-jitter configurável e AIMD; SDK fica em 1 tentativa para evitar retry empilhado |
+| Escrita com condição/token comprovadamente seguro | Sem retry técnico automático no SDK/runtime | Resultado rejeitado pode ser tratado; resultado ambíguo vira UNKNOWN e exige reconciliação |
 | Publish/send/invoke sem idempotência suficiente | Client/request configurado para 1 tentativa | UNKNOWN após resultado ambíguo; decidir no reconciliador |
 | `UnprocessedItems`/`UnprocessedKeys` | Loop semântico do adapter | Reenviar somente pendentes, com orçamento total incluindo retries SDK |
 | HTTP idempotente | Camada HTTP de integração | Tentativas limitadas, backoff com jitter, Retry-After limitado |
 | HTTP não idempotente | Sem retry técnico automático | Exigir chave/contrato e consulta de status antes de habilitar |
 | Resume de job | Engine | Carrega etapas pendentes; não equivale a retry do job completo |
 
-**FATO:** o SDK possui estratégias standard, legacy e adaptive; adaptive compartilha o impacto de throttling entre chamadas do client e pressupõe isolamento por recurso. **DECISÃO:** fixar standard e quantidade de tentativas, pois defaults podem variar por versão/serviço. Não compartilhar instância mutável de retry strategy entre clients. [Retry no SDK Java 2.x](https://docs.aws.amazon.com/sdk-for-java/latest/developer-guide/retry-strategy.html).
+**FATO:** o SDK possui estratégias standard, legacy e adaptive; adaptive compartilha o impacto de throttling entre chamadas do client e pressupõe isolamento por recurso. **DECISÃO:** os clients centrais usam `StandardRetryStrategy.maxAttempts(1)`; o runtime é o único dono do retry adicional de leituras explicitamente seguras. Isso evita multiplicação silenciosa de tentativas entre SDK e engine. [Retry no SDK Java 2.x](https://docs.aws.amazon.com/sdk-for-java/latest/developer-guide/retry-strategy.html).
 
 Não somar `@Retryable`/Resilience4j/SDK sobre a mesma chamada. Três camadas com três tentativas cada podem emitir 27 requests. Métrica de tentativa conta chamadas físicas, não apenas invocações lógicas do adapter. Se a configuração do transporte HTTP adicionar retry, desativar ou contabilizar explicitamente.
 

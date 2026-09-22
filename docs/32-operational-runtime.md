@@ -6,7 +6,7 @@ Status conferido no código em **2026-09-22**. Este capítulo descreve o runtime
 
 O runtime expõe jobs assíncronos em `/api/v1/jobs`, admite um job operacional ativo por processo e separa planejamento de execução. O planejamento pagina a fonte, persiste candidatos e cursores no SQLite e sela o conjunto com SHA-256 sobre request, versão da regra, identidade e registros. A execução exige aprovação ligada a esse hash. Primeiro processa até `canaryRecords`; se houver itens restantes, termina em `CANARY_COMPLETE` e exige nova aprovação com `promote=true`.
 
-O banco fica em `<toolkit.data-directory>/operations.sqlite`, com `journal_mode=WAL`, `synchronous=FULL`, foreign keys e `busy_timeout=5000`. As tabelas duráveis registram jobs, cursores, tarefas, efeitos e auditoria. Uma intenção é gravada antes de cada efeito remoto. Resposta confirmada vira `SUCCEEDED`; rejeição AWS 4xx vira `NOT_SENT`; timeout, erro de transporte ou falha AWS ambígua vira `UNKNOWN` e leva a `RECONCILIATION_REQUIRED`. Efeitos desconhecidos não são repetidos automaticamente.
+O banco fica em `<toolkit.core.data-directory>/operations.sqlite`, com `journal_mode=WAL`, `synchronous=FULL`, foreign keys e `busy_timeout=5000`. As tabelas duráveis registram jobs, cursores, tarefas, efeitos e auditoria. Uma intenção é gravada antes de cada efeito remoto. Resposta confirmada vira `SUCCEEDED`; rejeição AWS 4xx vira `NOT_SENT`; timeout, erro de transporte ou falha AWS ambígua vira `UNKNOWN` e leva a `RECONCILIATION_REQUIRED`. Efeitos desconhecidos não são repetidos automaticamente.
 
 Leituras usam até três tentativas para throttling, falhas AWS 5xx e transporte. Um limitador compartilhado combina semáforo, taxa persistida por job e ajuste AIMD: throttling reduz pela metade **taxa e concorrência efetiva**; a recuperação aumenta ambas gradualmente após vinte respostas saudáveis, até seus tetos. HTTP 429 alimenta o mesmo sinal de backpressure. Cinco falhas consecutivas abrem uma pausa de dez segundos e interrompem o job como `PAUSED`. O planejamento de Scan pode usar segmentos em paralelo; os efeitos das tarefas são confirmados sequencialmente para preservar budgets e ledger.
 
@@ -30,7 +30,7 @@ Relatórios vêm da fonte durável: CSV streaming, XLSX com janela SXSSF de 100 
 | `s3-delete` | `bucket`, `key`, `versionId`, `maxBytes` | Recusa retenção/legal hold detectável, exige versão e registra a intenção antes de excluir. |
 | `s3-abort-multipart` | `bucket`, `key`, `uploadId` | Aborta explicitamente um multipart upload conhecido. |
 
-Todos os recursos calculados pela regra precisam aparecer exatamente em `operations.resources`; wildcard é recusado. A identidade retornada pelo STS precisa coincidir com `toolkit.aws.expected-account`; sessões `assumed-role/.../<session>` são normalizadas para o ARN IAM estável da role e comparadas à allowlist de principals. Recursos ARN são checados também contra região/conta quando aplicável. Antes de cada chamada, o runtime repete identidade, allowlist, orçamento de chamadas, tempo e espaço livre. Fora de LOCAL, efeitos exigem **os dois gates** `toolkit.write-enabled=true` e `operations.writes=true`, além de request `EXECUTE`, confirmação explícita, referência operacional, motivo, plano selado e aprovação vigente.
+Todos os recursos calculados pela regra precisam aparecer exatamente em `toolkit.operations.resources`; wildcard é recusado. A identidade retornada pelo STS precisa coincidir com `toolkit.aws.expected-account`; sessões `assumed-role/.../<session>` são normalizadas para o ARN IAM estável da role e comparadas à allowlist de principals. Recursos ARN são checados também contra região/conta quando aplicável. Antes de cada chamada, o runtime repete identidade, allowlist, orçamento de chamadas, tempo e espaço livre. Fora de LOCAL, efeitos exigem **os dois gates** `toolkit.core.write-enabled=true` e `toolkit.operations.writes=true`, além de request `EXECUTE`, confirmação explícita, referência operacional, motivo, plano selado e aprovação vigente.
 
 ## Contrato de criação
 
@@ -77,11 +77,11 @@ Todos os recursos calculados pela regra precisam aparecer exatamente em `operati
 | `maxErrors` / `maxErrorRate` / `minErrorSample` | Error budget absoluto e percentual; defaults fail-safe são 0/0/100. |
 | `maxScannedRecords` / `maxReadCapacity` | Budgets independentes para leitura DynamoDB; defaults derivam de `maxRecords`. |
 
-O preflight também reserva `toolkit.minimum-free-bytes + maxRecords × 8192` bytes. Portanto, escolher dez milhões de registros exige espaço local compatível antes mesmo do planejamento.
+O preflight reserva `toolkit.core.minimum-free-space + maxRecords × toolkit.operations.estimated-bytes-per-record`. O default da estimativa por candidato é `8KB`, ajustável por ambiente; portanto, escolher dez milhões de registros exige espaço local compatível antes mesmo do planejamento.
 
 ## API operacional
 
-Todas as rotas, inclusive Actuator, exigem `Authorization: Bearer <TOOLKIT_LOCAL_TOKEN>`. O bind padrão continua em `127.0.0.1:8080`.
+Todas as rotas, inclusive Actuator, exigem `Authorization: Bearer <TOOLKIT_CORE_LOCAL_TOKEN>`. O bind padrão continua em `127.0.0.1:8080`.
 
 | Método e rota | Uso |
 | --- | --- |
@@ -106,7 +106,7 @@ Todas as rotas, inclusive Actuator, exigem `Authorization: Bearer <TOOLKIT_LOCAL
 Fluxo PowerShell após criar o job e aguardar `READY`:
 
 ```powershell
-$headers = @{ Authorization = "Bearer $env:TOOLKIT_LOCAL_TOKEN" }
+$headers = @{ Authorization = "Bearer $env:TOOLKIT_CORE_LOCAL_TOKEN" }
 $job = Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:8080/api/v1/jobs' `
   -Headers $headers -ContentType 'application/json' -Body (@{
     operation = 'dynamodb-inventory'
@@ -146,7 +146,7 @@ O caminho recomendado é:
 $bytes = New-Object byte[] 32
 $rng = [Security.Cryptography.RandomNumberGenerator]::Create()
 try { $rng.GetBytes($bytes) } finally { $rng.Dispose() }
-$env:TOOLKIT_LOCAL_TOKEN = [Convert]::ToBase64String($bytes)
+$env:TOOLKIT_CORE_LOCAL_TOKEN = [Convert]::ToBase64String($bytes)
 [Array]::Clear($bytes, 0, $bytes.Length)
 
 .\mvnw.cmd spring-boot:run '-Dspring-boot.run.profiles=lab'
@@ -163,7 +163,7 @@ Esse comando inicia e provisiona os containers, mas não os remove ao terminar. 
 ```powershell
 .\scripts\lab.ps1 -Action status
 .\scripts\lab.ps1 -Action down
-Remove-Item Env:TOOLKIT_LOCAL_TOKEN -ErrorAction SilentlyContinue
+Remove-Item Env:TOOLKIT_CORE_LOCAL_TOKEN -ErrorAction SilentlyContinue
 ```
 
 Os comandos Compose equivalentes são:

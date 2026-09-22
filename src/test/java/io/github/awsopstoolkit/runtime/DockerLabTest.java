@@ -28,11 +28,11 @@ class DockerLabTest {
 
     @DynamicPropertySource
     static void properties(DynamicPropertyRegistry r) {
-        r.add("toolkit.data-directory", () -> DATA.toString());
-        r.add("toolkit.local-token", () -> "local-lab-test-token-never-for-real-use-123");
-        r.add("toolkit.minimum-free-bytes", () -> 1048576);
-        r.add("operations.requests-per-second", () -> 100);
-        r.add("operations.page-size", () -> 7);
+        r.add("toolkit.core.data-directory", () -> DATA.toString());
+        r.add("toolkit.core.local-token", () -> "local-lab-test-token-never-for-real-use-123");
+        r.add("toolkit.core.minimum-free-space", () -> "1MB");
+        r.add("toolkit.operations.requests-per-second", () -> 100);
+        r.add("toolkit.operations.page-size", () -> 7);
     }
 
     @Autowired JobCoordinator coordinator;

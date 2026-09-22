@@ -13,7 +13,7 @@ O código atual contém dois níveis executáveis. A foundation mantém a demons
 | AWS SDK for Java | BOM 2.55.0, clients síncronos e transporte Apache 5 explícito |
 | Maven | Wrapper 3.9.12 |
 | Concorrência | MVC + virtual threads, admissão e limites explícitos |
-| HTTP externo | HTTP Service Interface + RestClient/JDK HTTP |
+| HTTP externo | JDK `HttpClient` reutilizado; política/budgets em `HttpProperties` |
 | Persistência | Foundation em JSON/chunks CSV; runtime operacional em SQLite WAL/FULL |
 
 Versões são o recorte documentado da pesquisa de **2026-09-18**, não atualizações automáticas. Uma baseline corporativa homologada prevalece. A [pesquisa](docs/00-research.md) compara alternativas e traz fontes oficiais; o [blueprint](docs/26-implementation-blueprint.md) separa implementado, exemplo e planejado.
@@ -38,12 +38,12 @@ try {
 } finally {
     $toolkitRandom.Dispose()
 }
-$env:TOOLKIT_LOCAL_TOKEN = [Convert]::ToBase64String($toolkitTokenBytes)
+$env:TOOLKIT_CORE_LOCAL_TOKEN = [Convert]::ToBase64String($toolkitTokenBytes)
 [Array]::Clear($toolkitTokenBytes, 0, $toolkitTokenBytes.Length)
 .\mvnw.cmd spring-boot:run
 ```
 
-A aplicação usa `127.0.0.1:8080`; endpoints de operações e Actuator exigem o mesmo token. Não gravar o token no Git, YAML, URL ou log. Depois de encerrar a aplicação, remover a variável da sessão com `Remove-Item Env:TOOLKIT_LOCAL_TOKEN`. O guia de [API](docs/27-api.md) oferece uma execução em background que permite chamar a API na mesma sessão sem copiar/imprimir o token.
+A aplicação usa `127.0.0.1:8080`; endpoints de operações e Actuator exigem o mesmo token. Não gravar o token no Git, YAML, URL ou log. Depois de encerrar a aplicação, remover a variável da sessão com `Remove-Item Env:TOOLKIT_CORE_LOCAL_TOKEN`. O guia de [API](docs/27-api.md) oferece uma execução em background que permite chamar a API na mesma sessão sem copiar/imprimir o token.
 
 Para exercitar a demonstração com token e diretório isolados, depois do build:
 
@@ -67,7 +67,7 @@ Gere um bearer token como no exemplo anterior e inicie a aplicação com o profi
 .\mvnw.cmd spring-boot:run '-Dspring-boot.run.profiles=lab'
 ```
 
-Em outra sessão que tenha o mesmo `TOOLKIT_LOCAL_TOKEN`, use `/api/v1/jobs`. O guia do [runtime operacional](docs/32-operational-runtime.md) documenta request, aprovação, promoção do canary, reconciliação, operações e relatórios. Para executar os checks automatizados do laboratório ou encerrar os containers:
+Em outra sessão que tenha o mesmo `TOOLKIT_CORE_LOCAL_TOKEN`, use `/api/v1/jobs`. O guia do [runtime operacional](docs/32-operational-runtime.md) documenta request, aprovação, promoção do canary, reconciliação, operações e relatórios. Para executar os checks automatizados do laboratório ou encerrar os containers:
 
 ```powershell
 .\scripts\lab.ps1 -Action test
@@ -111,7 +111,7 @@ Sem o script, os equivalentes principais são `docker compose up -d --wait`, `do
 31. **MVP recomendado:** [MVP, CORE e ADVANCED](docs/20-implementation-roadmap.md#mvp-core-e-advanced).
 32. **Checklist final:** [revisão crítica A–K e validações](docs/30-final-validation.md).
 
-Complementos: [runtime operacional e laboratório Docker](docs/32-operational-runtime.md), [requisitos e critérios de aceite](docs/01-requirements.md), [rastreabilidade do prompt](docs/31-requirement-map.md) e [guia de contribuição](CONTRIBUTING.md). O complemento do runtime não altera a ordem das 32 partes exigidas pelo prompt.
+Complementos: [runtime operacional e laboratório Docker](docs/32-operational-runtime.md), [reuso/configuração/modelagem/extensibilidade](docs/33-reuse-extensibility.md), [catálogo de configuração](docs/34-configuration-catalog.md), [rastreabilidade do prompt principal](docs/31-requirement-map.md), [rastreabilidade do prompt complementar](docs/35-complement-requirement-map.md), [receitas de extensão](docs/development/adding-operation.md) e [guia de contribuição](CONTRIBUTING.md). Os complementos não alteram a ordem das 32 partes exigidas pelo prompt mestre.
 
 ## Evolução e colaboração
 

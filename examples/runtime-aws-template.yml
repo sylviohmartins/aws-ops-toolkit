@@ -1,32 +1,31 @@
 # Template externo para DEV/HML autorizado. Não versionar valores reais/segredos.
 # Carregar com --spring.config.additional-location=file:./runtime-aws-local.yml
 toolkit:
-  environment: HML
-  write-enabled: false
-  data-directory: .aws-ops-toolkit/hml-session
-  minimum-free-bytes: 1073741824
-  local-token: ${TOOLKIT_LOCAL_TOKEN}
   aws:
     enabled: true
-    region: ${AWS_REGION}
-    profile: ${AWS_PROFILE}
     expected-account: ${TOOLKIT_EXPECTED_ACCOUNT}
     max-connections: 8
-
-operations:
-  enabled: true
-  writes: false
-  requests-per-second: 10
-  workers: 2
-  page-size: 100
-  plan-lifetime-seconds: 3600
-  approval-lifetime-seconds: 300
-  retention-days: 30
-  principals:
-    - ${TOOLKIT_ALLOWED_PRINCIPAL}
-  resources:
-    # Substituir somente no arquivo local não versionado por recursos autorizados exatos.
-    - ${TOOLKIT_ALLOWED_DYNAMODB_TABLE}
-  # Para payment-repair, habilitar endpoint/host somente quando aprovados:
-  # payment-endpoint: ${TOOLKIT_PAYMENT_ENDPOINT}
-  # payment-hosts: [${TOOLKIT_PAYMENT_HOST}]
+    profile: ${TOOLKIT_AWS_PROFILE}
+    region: ${AWS_REGION}
+  core:
+    data-directory: .aws-ops-toolkit/hml-session
+    environment: HML
+    local-token: ${TOOLKIT_CORE_LOCAL_TOKEN}
+    minimum-free-space: 1GB
+    write-enabled: false
+  operations:
+    approval-lifetime: 5m
+    enabled: true
+    estimated-bytes-per-record: 8KB
+    page-size: 100
+    plan-lifetime: 1h
+    principals:
+      - ${TOOLKIT_ALLOWED_PRINCIPAL}
+    requests-per-second: 10
+    resources:
+      # Substituir somente no arquivo local não versionado por recursos autorizados exatos.
+      - ${TOOLKIT_ALLOWED_DYNAMODB_TABLE}
+    retention: 30d
+    shutdown-timeout: 25s
+    workers: 2
+    writes: false

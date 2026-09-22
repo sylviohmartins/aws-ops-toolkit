@@ -1,5 +1,6 @@
 package io.github.awsopstoolkit.runtime;
 
+import io.github.awsopstoolkit.configuration.AwsProperties;
 import io.github.awsopstoolkit.configuration.ToolkitProperties;
 import java.util.Set;
 import software.amazon.awssdk.awscore.exception.AwsServiceException;
@@ -9,11 +10,17 @@ import software.amazon.awssdk.services.sts.StsClient;
 public final class ExecutionPolicy {
     private final RuntimeProperties runtime;
     private final ToolkitProperties toolkit;
+    private final AwsProperties aws;
     private final StsClient sts;
 
-    public ExecutionPolicy(RuntimeProperties runtime, ToolkitProperties toolkit, StsClient sts) {
+    public ExecutionPolicy(
+            RuntimeProperties runtime,
+            ToolkitProperties toolkit,
+            AwsProperties aws,
+            StsClient sts) {
         this.runtime = runtime;
         this.toolkit = toolkit;
+        this.aws = aws;
         this.sts = sts;
         if (runtime.resources().isEmpty()
                 || runtime.resources().stream().anyMatch(s -> s.contains("*"))
@@ -25,7 +32,7 @@ public final class ExecutionPolicy {
         try {
             var identity = sts.getCallerIdentity();
             String principal = normalizePrincipal(identity.arn());
-            if (!identity.account().equals(toolkit.aws().expectedAccount())
+            if (!identity.account().equals(aws.expectedAccount())
                     || (!runtime.principals().contains(principal)
                             && !runtime.principals().contains(identity.arn())))
                 throw new JobStopped(JobState.AUTHENTICATION_REQUIRED);
@@ -33,7 +40,7 @@ public final class ExecutionPolicy {
                     + "|"
                     + principal
                     + "|"
-                    + toolkit.aws().region()
+                    + aws.region()
                     + "|"
                     + toolkit.environment();
         } catch (AwsServiceException | SdkClientException e) {
@@ -71,16 +78,16 @@ public final class ExecutionPolicy {
                             .filter(p -> p.startsWith("arn:"))
                             .noneMatch(p -> p.startsWith("arn:" + fields[1] + ":")))
                 throw new IllegalArgumentException("AWS partition mismatch");
-            if (!fields[3].isBlank() && !fields[3].equals(toolkit.aws().region()))
+            if (!fields[3].isBlank() && !fields[3].equals(aws.region()))
                 throw new IllegalArgumentException("AWS region mismatch");
-            if (!fields[4].isBlank() && !fields[4].equals(toolkit.aws().expectedAccount()))
+            if (!fields[4].isBlank() && !fields[4].equals(aws.expectedAccount()))
                 throw new IllegalArgumentException("AWS account mismatch");
         } else if (resource.startsWith("http://") || resource.startsWith("https://")) {
             try {
                 var uri = java.net.URI.create(resource);
                 String[] parts = uri.getPath() == null ? new String[0] : uri.getPath().split("/");
                 for (String part : parts) {
-                    if (part.matches("\\d{12}") && !part.equals(toolkit.aws().expectedAccount()))
+                    if (part.matches("\\d{12}") && !part.equals(aws.expectedAccount()))
                         throw new IllegalArgumentException("AWS account mismatch in resource URL");
                     if (!part.isBlank()) break;
                 }
@@ -125,11 +132,11 @@ public final class ExecutionPolicy {
     }
 
     public String region() {
-        return toolkit.aws().region();
+        return aws.region();
     }
 
     public String account() {
-        return toolkit.aws().expectedAccount();
+        return aws.expectedAccount();
     }
 
     public void disk(SqliteJournal journal) throws java.io.IOException {
@@ -142,7 +149,9 @@ public final class ExecutionPolicy {
         resources(resources);
         disk(journal);
         if (journal.freeBytes()
-                < toolkit.minimumFreeBytes() + Math.multiplyExact(request.maxRecords(), 8192L))
+                < toolkit.minimumFreeBytes()
+                        + Math.multiplyExact(
+                                request.maxRecords(), runtime.estimatedBytesPerRecord().toBytes()))
             throw new JobStopped(JobState.BUDGET_EXCEEDED);
     }
 }
