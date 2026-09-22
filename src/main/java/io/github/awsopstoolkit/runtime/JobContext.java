@@ -168,11 +168,11 @@ public final class JobContext {
         if (request.mode() != JobMode.EXECUTE)
             throw new IllegalStateException("Remote effects are forbidden outside EXECUTE mode");
         var previous = journal.effect(id, task.sequence(), step);
-        if (previous != null && previous.state().equals("SUCCEEDED")) return previous.result();
-        if (previous != null && !previous.state().equals("NOT_SENT")) {
+        if (previous != null && previous.state() == EffectState.SUCCEEDED) return previous.result();
+        if (previous != null && previous.state() != EffectState.NOT_SENT) {
             Optional<String> result = reconcile.get();
             if (result.isPresent()) {
-                journal.effect(id, task.sequence(), step, "SUCCEEDED", result.get());
+                journal.effect(id, task.sequence(), step, EffectState.SUCCEEDED, result.get());
                 return result.get();
             }
             throw new JobStopped(JobState.RECONCILIATION_REQUIRED);
@@ -180,7 +180,7 @@ public final class JobContext {
         limiter.acquire(journal.job(id).rate());
         try {
             before(resource, true);
-            journal.effect(id, task.sequence(), step, "INTENT", "");
+            journal.effect(id, task.sequence(), step, EffectState.INTENT, "");
             try {
                 io.micrometer.core.instrument.Metrics.counter(
                                 "toolkit.aws.requests", "kind", "effect")
@@ -191,15 +191,20 @@ public final class JobContext {
                         .record(
                                 System.nanoTime() - callStarted,
                                 java.util.concurrent.TimeUnit.NANOSECONDS);
-                journal.effect(id, task.sequence(), step, "SUCCEEDED", result);
+                journal.effect(id, task.sequence(), step, EffectState.SUCCEEDED, result);
                 limiter.healthy();
                 return result;
             } catch (EffectNotDispatched e) {
-                journal.effect(id, task.sequence(), step, "NOT_SENT", "");
+                journal.effect(id, task.sequence(), step, EffectState.NOT_SENT, "");
                 throw new JobStopped(e.state());
             } catch (AwsServiceException e) {
                 boolean rejected = e.statusCode() >= 400 && e.statusCode() < 500;
-                journal.effect(id, task.sequence(), step, rejected ? "NOT_SENT" : "UNKNOWN", "");
+                journal.effect(
+                        id,
+                        task.sequence(),
+                        step,
+                        rejected ? EffectState.NOT_SENT : EffectState.UNKNOWN,
+                        "");
                 io.micrometer.core.instrument.Metrics.counter(
                                 "toolkit.aws.failures", "kind", "effect")
                         .increment();
@@ -214,7 +219,7 @@ public final class JobContext {
                 limiter.failure(e.isThrottlingException());
                 throw e;
             } catch (RuntimeException e) {
-                journal.effect(id, task.sequence(), step, "UNKNOWN", "");
+                journal.effect(id, task.sequence(), step, EffectState.UNKNOWN, "");
                 throw new JobStopped(JobState.RECONCILIATION_REQUIRED);
             }
         } finally {

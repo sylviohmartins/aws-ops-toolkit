@@ -22,7 +22,8 @@ class WorkflowValidationTest {
                         null,
                         null,
                         null,
-                        RuntimeTestFixtures.sqs());
+                        RuntimeTestFixtures.sqs(),
+                        RuntimeTestFixtures.s3());
         for (String function :
                 java.util.List.of(
                         "arn:aws:lambda:us-east-1:123456789012:function:target",
@@ -206,7 +207,8 @@ class WorkflowValidationTest {
                         null,
                         null,
                         null,
-                        RuntimeTestFixtures.sqs());
+                        RuntimeTestFixtures.sqs(),
+                        RuntimeTestFixtures.s3());
         var request =
                 new JobRequest(
                         "dlq-replay",

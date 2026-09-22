@@ -94,7 +94,7 @@ class ExecutionRecoveryTest {
     void responseLostAfterWriteReconcilesWithoutRepeatingEffect() throws Exception {
         var policy = policy();
         var remoteWrites = new AtomicInteger();
-        try (var journal = new SqliteJournal(directory)) {
+        try (var journal = RuntimeTestFixtures.journal(directory)) {
             var task = prepare(journal, policy);
             var context = context(journal, policy, new AtomicReference<>());
             var stopped =
@@ -111,7 +111,8 @@ class ExecutionRecoveryTest {
                                             },
                                             Optional::empty));
             assertEquals(JobState.RECONCILIATION_REQUIRED, stopped.state());
-            assertEquals("UNKNOWN", journal.effect("job", task.sequence(), "update").state());
+            assertEquals(
+                    EffectState.UNKNOWN, journal.effect("job", task.sequence(), "update").state());
             assertEquals(
                     "confirmed",
                     context.effect(
@@ -140,9 +141,9 @@ class ExecutionRecoveryTest {
     @Test
     void uncertainNonIdempotentWriteCannotBeBlindlyRetried() throws Exception {
         var policy = policy();
-        try (var journal = new SqliteJournal(directory)) {
+        try (var journal = RuntimeTestFixtures.journal(directory)) {
             var task = prepare(journal, policy);
-            journal.effect("job", task.sequence(), "publish", "INTENT", "");
+            journal.effect("job", task.sequence(), "publish", EffectState.INTENT, "");
             var context = context(journal, policy, new AtomicReference<>());
             assertEquals(
                     JobState.RECONCILIATION_REQUIRED,
@@ -164,7 +165,7 @@ class ExecutionRecoveryTest {
     @Test
     void expiredApprovalWrongIdentityAndCancellationBlockBeforeIntent() throws Exception {
         var policy = policy();
-        try (var journal = new SqliteJournal(directory)) {
+        try (var journal = RuntimeTestFixtures.journal(directory)) {
             var task = prepare(journal, policy);
             var stop = new AtomicReference<JobState>();
             var context = context(journal, policy, stop);
@@ -238,7 +239,7 @@ class ExecutionRecoveryTest {
                                 ToolkitProperties.Environment.LOCAL, directory, false),
                         RuntimeTestFixtures.aws("123456789012"),
                         sts);
-        try (var journal = new SqliteJournal(directory)) {
+        try (var journal = RuntimeTestFixtures.journal(directory)) {
             journal.create("job", "{}", "1", policy.identity(), 1000);
             var request =
                     new JobRequest("test", json.readTree("{}"), 10, 100, 60, 1, 0, 1, false, false);
@@ -269,7 +270,7 @@ class ExecutionRecoveryTest {
     @Test
     void resourceOutsidePlanCannotBeDispatched() throws Exception {
         var policy = policy();
-        try (var journal = new SqliteJournal(directory)) {
+        try (var journal = RuntimeTestFixtures.journal(directory)) {
             var task = prepare(journal, policy);
             var context = context(journal, policy, new AtomicReference<>());
             assertThrows(
@@ -288,7 +289,7 @@ class ExecutionRecoveryTest {
     @Test
     void exhaustedBudgetDoesNotDispatchUncountedIdentityLookup() throws Exception {
         var policy = policy();
-        try (var journal = new SqliteJournal(directory)) {
+        try (var journal = RuntimeTestFixtures.journal(directory)) {
             prepare(journal, policy);
             identityCalls.set(0);
             var actualCalls = new AtomicInteger();
@@ -328,7 +329,7 @@ class ExecutionRecoveryTest {
 
     private void assertScanBudget(int examined, double capacity) throws Exception {
         var policy = policy();
-        try (var journal = new SqliteJournal(directory)) {
+        try (var journal = RuntimeTestFixtures.journal(directory)) {
             prepare(journal, policy);
             var request =
                     new JobRequest(

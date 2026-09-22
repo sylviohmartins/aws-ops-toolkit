@@ -59,7 +59,11 @@ class SqsRecoveryTest {
     void unknownRefreshNeverTriggersAnotherReceive() throws Exception {
         try (var fixture = fixture()) {
             fixture.journal.effect(
-                    "job", fixture.task.sequence(), "receive-refresh/0000000001", "UNKNOWN", "");
+                    "job",
+                    fixture.task.sequence(),
+                    "receive-refresh/0000000001",
+                    EffectState.UNKNOWN,
+                    "");
             incoming.add(message("original", "must-not-receive"));
             assertEquals(
                     JobState.RECONCILIATION_REQUIRED,
@@ -79,7 +83,7 @@ class SqsRecoveryTest {
                     "job",
                     fixture.task.sequence(),
                     "receive-refresh/0000000001",
-                    "SUCCEEDED",
+                    EffectState.SUCCEEDED,
                     envelope("fresh-receipt", SqliteJournal.now()));
             assertEquals("REPLAYED", fixture.workflow.execute(fixture.context, fixture.task));
             assertEquals(0, receives.get());
@@ -92,7 +96,7 @@ class SqsRecoveryTest {
     void acknowledgedMessageDoesNotNeedToBeReacquiredAfterRestart() throws Exception {
         try (var fixture = fixture()) {
             fixture.journal.effect(
-                    "job", fixture.task.sequence(), "ack", "SUCCEEDED", "ACKNOWLEDGED");
+                    "job", fixture.task.sequence(), "ack", EffectState.SUCCEEDED, "ACKNOWLEDGED");
             assertEquals("REPLAYED", fixture.workflow.execute(fixture.context, fixture.task));
             assertEquals(0, receives.get());
             assertTrue(deleted.isEmpty());
@@ -230,7 +234,7 @@ class SqsRecoveryTest {
                         1,
                         true,
                         true);
-        var journal = new SqliteJournal(directory);
+        var journal = RuntimeTestFixtures.journal(directory);
         journal.create("job", "{}", "1", policy.identity(), 1000);
         journal.page(
                 "job",
@@ -245,9 +249,14 @@ class SqsRecoveryTest {
                 "job",
                 task.sequence(),
                 "receive",
-                "SUCCEEDED",
+                EffectState.SUCCEEDED,
                 envelope("expired-receipt", SqliteJournal.now() - 200));
-        journal.effect("job", task.sequence(), "send/original", "SUCCEEDED", "sent-before-crash");
+        journal.effect(
+                "job",
+                task.sequence(),
+                "send/original",
+                EffectState.SUCCEEDED,
+                "sent-before-crash");
         var context =
                 new JobContext(
                         "job",
@@ -270,7 +279,8 @@ class SqsRecoveryTest {
                         null,
                         null,
                         null,
-                        RuntimeTestFixtures.sqs()));
+                        RuntimeTestFixtures.sqs(),
+                        RuntimeTestFixtures.s3()));
     }
 
     record Fixture(

@@ -1,5 +1,6 @@
 package io.github.awsopstoolkit.aws;
 
+import io.github.awsopstoolkit.configuration.S3Properties;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -15,16 +16,20 @@ import software.amazon.awssdk.services.s3.model.*;
  * Bounded streaming examples. The operation owns local artifact policy and multipart orchestration.
  */
 public final class S3Service {
-    private static final int STREAM_BUFFER_BYTES = 64 * 1024;
-
     private final S3Client client;
     private final AwsCallGate gate;
     private final WriteAuthorization authorization;
+    private final int streamBufferBytes;
 
-    public S3Service(S3Client client, AwsCallGate gate, WriteAuthorization authorization) {
+    public S3Service(
+            S3Client client,
+            AwsCallGate gate,
+            WriteAuthorization authorization,
+            S3Properties properties) {
         this.client = Objects.requireNonNull(client);
         this.gate = Objects.requireNonNull(gate);
         this.authorization = Objects.requireNonNull(authorization);
+        this.streamBufferBytes = Objects.requireNonNull(properties).streamBufferBytes();
     }
 
     public HeadObjectResponse head(HeadObjectRequest request) throws InterruptedException {
@@ -32,7 +37,8 @@ public final class S3Service {
     }
 
     /**
-     * Streams with a 64 KiB buffer, a byte budget and cancellation; never materializes the object.
+     * Streams with a configured bounded buffer, a byte budget and cancellation; never materializes
+     * the object.
      */
     public GetObjectResponse download(
             GetObjectRequest request, OutputStream target, long maxBytes, BooleanSupplier cancelled)
@@ -50,7 +56,7 @@ public final class S3Service {
                                 if (declared != null && declared > maxBytes) {
                                     throw new IOException("Object exceeds download budget");
                                 }
-                                byte[] buffer = new byte[STREAM_BUFFER_BYTES];
+                                byte[] buffer = new byte[streamBufferBytes];
                                 long copied = 0;
                                 while (true) {
                                     if (cancelled.getAsBoolean()

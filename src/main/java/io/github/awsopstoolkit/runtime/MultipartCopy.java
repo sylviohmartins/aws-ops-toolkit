@@ -6,7 +6,6 @@ import software.amazon.awssdk.services.s3.model.*;
 
 /** Durable multipart copy. Each accepted part and upload ID can be reused after restart. */
 public final class MultipartCopy {
-    private static final long MIN_PART_SIZE_BYTES = 8L * 1024 * 1024;
     private static final int MAX_MULTIPART_PARTS = 10_000;
 
     private MultipartCopy() {}
@@ -20,8 +19,12 @@ public final class MultipartCopy {
             String sourceVersion,
             String target,
             String targetKey,
-            long bytes)
+            long bytes,
+            long minimumPartSizeBytes)
             throws Exception {
+        if (minimumPartSizeBytes < 1) {
+            throw new IllegalArgumentException("minimumPartSizeBytes must be positive");
+        }
         String marker = c.id() + ":" + task.sequence();
         String upload =
                 c.effect(
@@ -40,7 +43,7 @@ public final class MultipartCopy {
                                         .uploadId(),
                         Optional::empty);
         long partSize =
-                Math.max(MIN_PART_SIZE_BYTES, Math.ceilDiv(bytes, (long) MAX_MULTIPART_PARTS));
+                Math.max(minimumPartSizeBytes, Math.ceilDiv(bytes, (long) MAX_MULTIPART_PARTS));
         List<CompletedPart> parts = new ArrayList<>();
         for (long offset = 0; offset < bytes; offset += partSize) {
             c.checkpoint();

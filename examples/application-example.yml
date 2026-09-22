@@ -36,7 +36,7 @@ toolkit:
   core:
     data-directory: .aws-ops-toolkit/data
     environment: LOCAL
-    local-token: "${TOOLKIT_LOCAL_TOKEN:}"
+    local-token: "${TOOLKIT_CORE_LOCAL_TOKEN:}"
     max-concurrent-operations: 2
     minimum-free-space: 1GB
     page-size: 100
@@ -55,6 +55,11 @@ toolkit:
     payment-hosts:
       - "example.invalid"
     response-timeout: 10s
+  # SQLite lock and API/report read windows.
+  journal:
+    api-page-size: 100
+    busy-timeout: 5s
+    report-window-size: 500
   # Durable runtime, disabled and read-only by default.
   operations:
     approval-lifetime: 15m
@@ -85,8 +90,17 @@ toolkit:
     xlsx-estimated-bytes-per-row: 1024
     xlsx-max-data-rows: 1000000
     xlsx-row-window: 100
-  # Receive lease used only by explicit SQS workflows.
+  # S3 streaming/multipart tuning.
+  s3:
+    multipart-part-size: 8MB
+    stream-buffer-size: 64KB
+  # Receive/lease tuning used only by explicit SQS workflows.
   sqs:
+    acknowledgement-lease-reserve: 5s
+    poison-receive-count: 5
+    receipt-reacquire-attempts: 3
+    receipt-reuse-lease-reserve: 40s
+    receive-wait-time: 1s
     visibility-timeout: 120s
 logging:
   level:

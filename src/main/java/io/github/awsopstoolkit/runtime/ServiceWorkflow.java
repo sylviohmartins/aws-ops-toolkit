@@ -1,6 +1,7 @@
 package io.github.awsopstoolkit.runtime;
 
 import io.github.awsopstoolkit.aws.S3Limits;
+import io.github.awsopstoolkit.configuration.S3Properties;
 import io.github.awsopstoolkit.configuration.SqsProperties;
 import io.github.awsopstoolkit.security.Hashing;
 import java.io.*;
@@ -18,12 +19,8 @@ import tools.jackson.databind.JsonNode;
 public final class ServiceWorkflow implements Workflow {
     private static final String REFRESH_PREFIX = "receive-refresh/";
     private static final int MAX_COMMAND_MESSAGES = 1_000;
-    private static final int DEFAULT_POISON_RECEIVE_COUNT = 5;
     private static final int MAX_POISON_RECEIVE_COUNT = 1_000;
     private static final int MAX_INLINE_PAYLOAD_CHARS = 65_536;
-    private static final int RECEIPT_REACQUIRE_ATTEMPTS = 3;
-    private static final int ACK_LEASE_RESERVE_SECONDS = 5;
-    private static final int REUSE_LEASE_RESERVE_SECONDS = 40;
 
     public enum Kind {
         SQS_INSPECT,
@@ -43,6 +40,12 @@ public final class ServiceWorkflow implements Workflow {
     private final S3Client s3;
     private final software.amazon.awssdk.services.dynamodb.DynamoDbClient dynamo;
     private final int visibilityTimeoutSeconds;
+    private final int receiveWaitTimeSeconds;
+    private final int receiptReacquireAttempts;
+    private final int poisonReceiveCount;
+    private final int acknowledgementLeaseReserveSeconds;
+    private final int receiptReuseLeaseReserveSeconds;
+    private final long multipartPartSizeBytes;
 
     public ServiceWorkflow(
             Kind kind,
@@ -51,7 +54,8 @@ public final class ServiceWorkflow implements Workflow {
             LambdaClient lambda,
             S3Client s3,
             software.amazon.awssdk.services.dynamodb.DynamoDbClient dynamo,
-            SqsProperties sqsProperties) {
+            SqsProperties sqsProperties,
+            S3Properties s3Properties) {
         this.kind = kind;
         this.sqs = sqs;
         this.sns = sns;
@@ -59,6 +63,13 @@ public final class ServiceWorkflow implements Workflow {
         this.s3 = s3;
         this.dynamo = dynamo;
         this.visibilityTimeoutSeconds = sqsProperties.visibilityTimeoutSeconds();
+        this.receiveWaitTimeSeconds = sqsProperties.receiveWaitTimeSeconds();
+        this.receiptReacquireAttempts = sqsProperties.receiptReacquireAttempts();
+        this.poisonReceiveCount = sqsProperties.poisonReceiveCount();
+        this.acknowledgementLeaseReserveSeconds =
+                sqsProperties.acknowledgementLeaseReserveSeconds();
+        this.receiptReuseLeaseReserveSeconds = sqsProperties.receiptReuseLeaseReserveSeconds();
+        this.multipartPartSizeBytes = s3Properties.multipartPartBytes();
     }
 
     @Override
@@ -104,8 +115,7 @@ public final class ServiceWorkflow implements Workflow {
             if (p.path("messages").asInt(0) < 1
                     || p.path("messages").asInt() > MAX_COMMAND_MESSAGES)
                 throw new IllegalArgumentException("messages must be 1.." + MAX_COMMAND_MESSAGES);
-            int poisonReceiveCount =
-                    p.path("poisonReceiveCount").asInt(DEFAULT_POISON_RECEIVE_COUNT);
+            int poisonReceiveCount = p.path("poisonReceiveCount").asInt(this.poisonReceiveCount);
             if (poisonReceiveCount < 1 || poisonReceiveCount > MAX_POISON_RECEIVE_COUNT)
                 throw new IllegalArgumentException(
                         "poisonReceiveCount must be 1.." + MAX_POISON_RECEIVE_COUNT);
@@ -443,7 +453,8 @@ public final class ServiceWorkflow implements Workflow {
         // Receive itself is an approved effect. Dry-run only records the command and its impact.
         var original = receiveEnvelope(c, task, queue, "receive");
         if (!original.has("id")) return "EMPTY";
-        if (original.path("receiveCount").asInt(1) >= p.path("poisonReceiveCount").asInt(5)) {
+        if (original.path("receiveCount").asInt(1)
+                >= p.path("poisonReceiveCount").asInt(poisonReceiveCount)) {
             c.audit("POISON_MESSAGE_NO_ACK", Long.toString(task.sequence()));
             return "POISON_NO_ACK";
         }
@@ -453,9 +464,9 @@ public final class ServiceWorkflow implements Workflow {
         }
         var acknowledgement = c.latestEffect(task, "ack");
         if (acknowledgement != null) {
-            if (acknowledgement.state().equals("SUCCEEDED"))
+            if (acknowledgement.state() == EffectState.SUCCEEDED)
                 return kind == Kind.SQS_CONSUME ? "CONSUMED" : "REPLAYED";
-            if (!acknowledgement.state().equals("NOT_SENT"))
+            if (acknowledgement.state() != EffectState.NOT_SENT)
                 throw new JobStopped(JobState.RECONCILIATION_REQUIRED);
         }
         var message = freshReceipt(c, task, queue, original);
@@ -560,7 +571,7 @@ public final class ServiceWorkflow implements Workflow {
                 queue,
                 () -> {
                     // Authorization and rate waiting happen before this supplier runs.
-                    if (!leaseValid(current, ACK_LEASE_RESERVE_SECONDS))
+                    if (!leaseValid(current, acknowledgementLeaseReserveSeconds))
                         throw new EffectNotDispatched(JobState.PAUSED);
                     sqs.deleteMessage(
                             b -> b.queueUrl(queue).receiptHandle(current.path("receipt").asText()));
@@ -585,7 +596,7 @@ public final class ServiceWorkflow implements Workflow {
                                             b ->
                                                     b.queueUrl(queue)
                                                             .maxNumberOfMessages(1)
-                                                            .waitTimeSeconds(1)
+                                                            .waitTimeSeconds(receiveWaitTimeSeconds)
                                                             .visibilityTimeout(
                                                                     visibilityTimeoutSeconds)
                                                             .messageAttributeNames("All")
@@ -606,34 +617,34 @@ public final class ServiceWorkflow implements Workflow {
         return c.json.readTree(result);
     }
 
-    /** Three new receives per attempt; durable sequence numbers allow a later bounded retry. */
+    /** Bounded receipt reacquisition; durable sequence numbers allow a later bounded retry. */
     private JsonNode freshReceipt(
             JobContext c, SqliteJournal.Task task, String queue, JsonNode original)
             throws Exception {
         var latest = c.latestEffect(task, REFRESH_PREFIX);
         long next = 1;
         if (latest == null) {
-            if (leaseValid(original, REUSE_LEASE_RESERVE_SECONDS)) return original;
+            if (leaseValid(original, receiptReuseLeaseReserveSeconds)) return original;
         } else {
             next = Long.parseLong(latest.step().substring(REFRESH_PREFIX.length()));
-            if (latest.state().equals("SUCCEEDED")) {
+            if (latest.state() == EffectState.SUCCEEDED) {
                 var cached = c.json.readTree(latest.result());
                 if (sameMessage(original, cached)
-                        && leaseValid(cached, REUSE_LEASE_RESERVE_SECONDS)) return cached;
+                        && leaseValid(cached, receiptReuseLeaseReserveSeconds)) return cached;
                 if (cached.has("id") && !sameMessage(original, cached))
                     releaseUnrelated(c, task, queue, latest.step(), cached);
                 next++;
-            } else if (!latest.state().equals("NOT_SENT")) {
+            } else if (latest.state() != EffectState.NOT_SENT) {
                 throw new JobStopped(JobState.RECONCILIATION_REQUIRED);
             }
         }
-        for (int attempt = 0; attempt < RECEIPT_REACQUIRE_ATTEMPTS; attempt++, next++) {
+        for (int attempt = 0; attempt < receiptReacquireAttempts; attempt++, next++) {
             c.checkpoint();
             String step = REFRESH_PREFIX + String.format(Locale.ROOT, "%010d", next);
             var received = receiveEnvelope(c, task, queue, step);
             if (!received.has("id")) continue;
             if (sameMessage(original, received)) {
-                if (leaseValid(received, REUSE_LEASE_RESERVE_SECONDS)) return received;
+                if (leaseValid(received, receiptReuseLeaseReserveSeconds)) return received;
             } else releaseUnrelated(c, task, queue, step, received);
         }
         c.audit("RECEIPT_REACQUISITION_REQUIRED", Long.toString(task.sequence()));
@@ -699,7 +710,8 @@ public final class ServiceWorkflow implements Workflow {
                     p.path("versionId").asText(),
                     target,
                     key,
-                    head.contentLength());
+                    head.contentLength(),
+                    multipartPartSizeBytes);
             return "COPIED_MULTIPART";
         }
         c.effect(
