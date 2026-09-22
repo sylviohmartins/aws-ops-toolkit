@@ -12,7 +12,7 @@ class JournalRecoveryTest {
 
     @Test
     void pageCursorAndCandidatesCommitTogetherAndReplaysDeduplicate() throws Exception {
-        try (var journal = new SqliteJournal(directory)) {
+        try (var journal = RuntimeTestFixtures.journal(directory)) {
             journal.create("job", "{}", "1", "identity", 10);
             var page =
                     new Workflow.Page(
@@ -43,7 +43,7 @@ class JournalRecoveryTest {
     @Test
     void crashPreservesIntentAndRevokesApproval() throws Exception {
         long task;
-        try (var journal = new SqliteJournal(directory)) {
+        try (var journal = RuntimeTestFixtures.journal(directory)) {
             journal.create("job", "{}", "1", "identity", 10);
             journal.page(
                     "job",
@@ -53,20 +53,20 @@ class JournalRecoveryTest {
             journal.seal("job");
             journal.approve("job", SqliteJournal.now() + 100, "change-test", false);
             task = journal.pending("job", 1).getFirst().sequence();
-            journal.effect("job", task, "remote-write", "INTENT", "");
+            journal.effect("job", task, "remote-write", EffectState.INTENT, "");
             journal.state("job", JobState.RUNNING);
         }
-        try (var journal = new SqliteJournal(directory)) {
+        try (var journal = RuntimeTestFixtures.journal(directory)) {
             assertEquals(JobState.INTERRUPTED, journal.job("job").state());
             assertEquals(0, journal.job("job").approvedUntil());
-            assertEquals("INTENT", journal.effect("job", task, "remote-write").state());
+            assertEquals(EffectState.INTENT, journal.effect("job", task, "remote-write").state());
             assertEquals(0, journal.count("job", "DONE"));
         }
     }
 
     @Test
     void planHashBindsIdentityRuleAndPayloadAndCallBudgetPersists() throws Exception {
-        try (var journal = new SqliteJournal(directory)) {
+        try (var journal = RuntimeTestFixtures.journal(directory)) {
             journal.create("a", "{}", "1", "identity", 10);
             journal.create("b", "{}", "2", "identity", 10);
             for (String id : List.of("a", "b"))

@@ -140,7 +140,7 @@ public final class PaymentWorkflow extends DynamoWorkflow {
         Map<String, AttributeValue> key = Map.of("id", s(task.key()));
         // Once a write may have happened, complete/reconcile its delivery chain from the ledger.
         var priorUpdate = c.effectState(task, "dynamodb-update");
-        if (priorUpdate == null || priorUpdate.state().equals("NOT_SENT")) {
+        if (priorUpdate == null || priorUpdate.state() == EffectState.NOT_SENT) {
             var remote = http.get(c, task.key());
             if (!"SETTLED".equals(remote.path("status").asText())) return "SKIPPED";
         }

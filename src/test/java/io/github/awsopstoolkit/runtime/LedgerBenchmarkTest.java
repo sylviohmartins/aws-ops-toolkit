@@ -45,7 +45,7 @@ class LedgerBenchmarkTest {
         long diskBytesWhileOpen;
         String planHash;
 
-        try (var journal = new SqliteJournal(directory)) {
+        try (var journal = RuntimeTestFixtures.journal(directory)) {
             journal.create("benchmark", "{}", "1", "benchmark-identity", 1000);
 
             long insertStarted = System.nanoTime();

@@ -1,5 +1,6 @@
 package io.github.awsopstoolkit.runtime;
 
+import io.github.awsopstoolkit.configuration.JournalProperties;
 import io.github.awsopstoolkit.security.Hashing;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -14,14 +15,18 @@ import java.util.function.Consumer;
 public final class SqliteJournal implements AutoCloseable {
     private static final int MAX_RECORD_KEY_CHARS = 2_048;
     private static final int MAX_RECORD_PAYLOAD_CHARS = 1_048_576;
-    private static final int PLAN_PAGE_SIZE = 100;
-    private static final int REPORT_WINDOW_SIZE = 500;
     private static final int MAX_EFFECT_PREFIX_CHARS = 64;
     private final Connection db;
     private final Path directory;
+    private final int apiPageSize;
+    private final int reportWindowSize;
 
-    public SqliteJournal(Path directory) throws SQLException, IOException {
+    public SqliteJournal(Path directory, JournalProperties properties)
+            throws SQLException, IOException {
+        Objects.requireNonNull(properties, "properties");
         this.directory = directory.toAbsolutePath().normalize();
+        this.apiPageSize = properties.apiPageSize();
+        this.reportWindowSize = properties.reportWindowSize();
         Files.createDirectories(this.directory);
         db =
                 DriverManager.getConnection(
@@ -35,7 +40,7 @@ public final class SqliteJournal implements AutoCloseable {
             if (version > 5) throw new SQLException("Unsupported journal schema");
             s.execute("PRAGMA journal_mode=WAL");
             s.execute("PRAGMA synchronous=FULL");
-            s.execute("PRAGMA busy_timeout=5000");
+            s.execute("PRAGMA busy_timeout=" + properties.busyTimeout().toMillis());
             s.execute("PRAGMA foreign_keys=ON");
             db.setAutoCommit(false);
             s.execute(
@@ -265,12 +270,16 @@ public final class SqliteJournal implements AutoCloseable {
                                 task,
                                 step);
                 var r = s.executeQuery()) {
-            return r.next() ? new Effect(r.getString(1), r.getString(2)) : null;
+            return r.next()
+                    ? new Effect(EffectState.valueOf(r.getString(1)), r.getString(2))
+                    : null;
         }
     }
 
-    public synchronized void effect(String id, long task, String step, String state, String result)
+    public synchronized void effect(
+            String id, long task, String step, EffectState state, String result)
             throws SQLException {
+        Objects.requireNonNull(state, "state");
         transaction(
                 () -> {
                     update(
@@ -278,9 +287,9 @@ public final class SqliteJournal implements AutoCloseable {
                             id,
                             task,
                             step,
-                            state,
+                            state.name(),
                             result);
-                    audit(id, "EFFECT_" + state, task + ":" + step);
+                    audit(id, "EFFECT_" + state.name(), task + ":" + step);
                 });
     }
 
@@ -401,7 +410,8 @@ public final class SqliteJournal implements AutoCloseable {
                                 prefix + "%");
                 var r = s.executeQuery()) {
             return r.next()
-                    ? new NamedEffect(r.getString(1), r.getString(2), r.getString(3))
+                    ? new NamedEffect(
+                            r.getString(1), EffectState.valueOf(r.getString(2)), r.getString(3))
                     : null;
         }
     }
@@ -414,7 +424,7 @@ public final class SqliteJournal implements AutoCloseable {
                                 "SELECT seq,record_key,payload,state,outcome FROM tasks WHERE job=? AND seq>? ORDER BY seq LIMIT ?",
                                 id,
                                 after,
-                                PLAN_PAGE_SIZE);
+                                apiPageSize);
                 var r = s.executeQuery()) {
             while (r.next())
                 rows.add(
@@ -433,14 +443,14 @@ public final class SqliteJournal implements AutoCloseable {
         return rows;
     }
 
-    public synchronized Map<String, Long> effectCounts(String id) throws SQLException {
-        Map<String, Long> result = new TreeMap<>();
+    public synchronized Map<EffectState, Long> effectCounts(String id) throws SQLException {
+        Map<EffectState, Long> result = new EnumMap<>(EffectState.class);
         try (var s =
                         statement(
                                 "SELECT state,count(*) FROM effects WHERE job=? GROUP BY state",
                                 id);
                 var r = s.executeQuery()) {
-            while (r.next()) result.put(r.getString(1), r.getLong(2));
+            while (r.next()) result.put(EffectState.valueOf(r.getString(1)), r.getLong(2));
         }
         return Collections.unmodifiableMap(result);
     }
@@ -511,7 +521,7 @@ public final class SqliteJournal implements AutoCloseable {
                                         "SELECT seq,record_key,state,outcome FROM tasks WHERE job=? AND seq>? ORDER BY seq LIMIT ?",
                                         id,
                                         after,
-                                        REPORT_WINDOW_SIZE);
+                                        reportWindowSize);
                         var r = s.executeQuery()) {
                     while (r.next())
                         rows.add(
@@ -537,7 +547,7 @@ public final class SqliteJournal implements AutoCloseable {
                                 "SELECT seq,record_key,state,outcome FROM tasks WHERE job=? AND seq>? AND outcome IN ('FAILED','FUNCTION_ERROR','BUSINESS_REJECTED','ERROR','CONFLICT') ORDER BY seq LIMIT ?",
                                 id,
                                 after,
-                                PLAN_PAGE_SIZE);
+                                apiPageSize);
                 var r = s.executeQuery()) {
             while (r.next())
                 rows.add(
@@ -555,7 +565,7 @@ public final class SqliteJournal implements AutoCloseable {
                                 "SELECT seq,time,event,detail FROM audit WHERE job=? AND seq>? ORDER BY seq LIMIT ?",
                                 id,
                                 after,
-                                REPORT_WINDOW_SIZE);
+                                reportWindowSize);
                 var r = s.executeQuery()) {
             while (r.next())
                 rows.add(
@@ -652,9 +662,9 @@ public final class SqliteJournal implements AutoCloseable {
 
     public record Cursor(String value, boolean complete) {}
 
-    public record Effect(String state, String result) {}
+    public record Effect(EffectState state, String result) {}
 
-    public record NamedEffect(String step, String state, String result) {}
+    public record NamedEffect(String step, EffectState state, String result) {}
 
     public record ReportRow(long sequence, String key, String state, String outcome) {}
 }

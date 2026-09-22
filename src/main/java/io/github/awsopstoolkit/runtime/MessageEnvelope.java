@@ -11,10 +11,6 @@ import tools.jackson.databind.ObjectMapper;
 final class MessageEnvelope {
     private MessageEnvelope() {}
 
-    static String encode(Message message, ObjectMapper json) {
-        return encode(message, json, SqliteJournal.now(), 120);
-    }
-
     static String encode(
             Message message, ObjectMapper json, long receivedAt, int visibilitySeconds) {
         validateBodyMd5(message);

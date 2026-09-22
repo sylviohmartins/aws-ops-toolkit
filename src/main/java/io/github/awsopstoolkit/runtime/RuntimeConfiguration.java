@@ -25,9 +25,12 @@ public class RuntimeConfiguration {
     }
 
     @Bean(destroyMethod = "close")
-    SqliteJournal journal(ToolkitProperties p, FileCheckpointStore exclusiveProcessLock)
+    SqliteJournal journal(
+            ToolkitProperties p,
+            JournalProperties journalProperties,
+            FileCheckpointStore exclusiveProcessLock)
             throws Exception {
-        return new SqliteJournal(p.dataDirectory());
+        return new SqliteJournal(p.dataDirectory(), journalProperties);
     }
 
     @Bean
@@ -49,6 +52,7 @@ public class RuntimeConfiguration {
             SqliteJournal journal,
             RuntimeProperties settings,
             HttpProperties httpSettings,
+            S3Properties s3Settings,
             SqsProperties sqsSettings,
             ExecutionPolicy policy,
             DynamoDbClient dynamo,
@@ -68,7 +72,9 @@ public class RuntimeConfiguration {
             rules.add(new PaymentWorkflow(dynamo, sqs, sns, lambda, s3, http, httpSettings));
         }
         for (var kind : ServiceWorkflow.Kind.values()) {
-            rules.add(new ServiceWorkflow(kind, sqs, sns, lambda, s3, dynamo, sqsSettings));
+            rules.add(
+                    new ServiceWorkflow(
+                            kind, sqs, sns, lambda, s3, dynamo, sqsSettings, s3Settings));
         }
         rules.add(new CompensationWorkflow(dynamo));
         return new JobCoordinator(journal, settings, policy, rules, json, validator);

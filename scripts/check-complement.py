@@ -51,6 +51,32 @@ for source in java_files():
         fail(f"hardcoded AWS endpoint in main code: {source.relative_to(ROOT)}")
     if re.search(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b", text):
         fail(f"credential-like access key in main code: {source.relative_to(ROOT)}")
+    for pattern, label in (
+        (r"PRAGMA\s+busy_timeout\s*=\s*\d+", "SQLite busy timeout"),
+        (r"\.waitTimeSeconds\(\s*\d+", "SQS receive wait time"),
+        (r"\bSTREAM_BUFFER_BYTES\b", "stream buffer"),
+        (r"\bMIN_PART_SIZE_BYTES\b", "multipart part size"),
+        (r"\bPLAN_PAGE_SIZE\b", "journal API page size"),
+        (r"\bREPORT_WINDOW_SIZE\b", "journal report window"),
+        (
+            r'poisonReceiveCount"\)\.asInt\(\s*\d+',
+            "SQS poison receive default",
+        ),
+    ):
+        if re.search(pattern, text):
+            fail(
+                f"operational tuning must come from configuration ({label}): "
+                f"{source.relative_to(ROOT)}"
+            )
+
+    if re.search(r'"(?:INTENT|UNKNOWN|SUCCEEDED|NOT_SENT)"', text):
+        fail(
+            "durable effect states must use EffectState instead of Java magic strings: "
+            f"{source.relative_to(ROOT)}"
+        )
+
+if "${TOOLKIT_CORE_LOCAL_TOKEN:}" not in EXAMPLE.read_text(encoding="utf-8"):
+    fail("application-example.yml must use TOOLKIT_CORE_LOCAL_TOKEN for toolkit.core.local-token")
 
 for forbidden in (
     "Utils",

@@ -49,6 +49,10 @@ toolkit:
     max-retry-after: 10s
     payment-hosts: []
     response-timeout: 10s
+  journal:
+    api-page-size: 100
+    busy-timeout: 5s
+    report-window-size: 500
   operations:
     approval-lifetime: 15m
     circuit-failures-before-open: 5
@@ -76,7 +80,15 @@ toolkit:
     xlsx-estimated-bytes-per-row: 1024
     xlsx-max-data-rows: 1000000
     xlsx-row-window: 100
+  s3:
+    multipart-part-size: 8MB
+    stream-buffer-size: 64KB
   sqs:
+    acknowledgement-lease-reserve: 5s
+    poison-receive-count: 5
+    receipt-reacquire-attempts: 3
+    receipt-reuse-lease-reserve: 40s
+    receive-wait-time: 1s
     visibility-timeout: 120s
 logging:
   level:

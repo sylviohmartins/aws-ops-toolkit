@@ -97,7 +97,7 @@ class PaymentResumeTest {
                                     ToolkitProperties.Environment.LOCAL, directory, false),
                             RuntimeTestFixtures.aws("123456789012"),
                             sts);
-            try (var journal = new SqliteJournal(directory);
+            try (var journal = RuntimeTestFixtures.journal(directory);
                     var http = new PaymentGateway(httpSettings, settings)) {
                 journal.create(
                         "job", json.writeValueAsString(request), "1", policy.identity(), 1000);
@@ -115,7 +115,12 @@ class PaymentResumeTest {
                 journal.seal("job");
                 journal.approve("job", SqliteJournal.now() + 60, "LAB resume validation", false);
                 var task = journal.pending("job", 1).getFirst();
-                journal.effect("job", task.sequence(), "dynamodb-update", "SUCCEEDED", "UPDATED");
+                journal.effect(
+                        "job",
+                        task.sequence(),
+                        "dynamodb-update",
+                        EffectState.SUCCEEDED,
+                        "UPDATED");
                 var context =
                         new JobContext(
                                 "job",
