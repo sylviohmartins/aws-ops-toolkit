@@ -20,9 +20,11 @@ Este capítulo descreve a configuração executável atual do aws-ops-toolkit. O
 | toolkit.aws.* | credentials profile, account, region, pool/timeouts dos clients |
 | toolkit.dynamodb.* | acesso Dynamo tipado e logical→physical table mappings |
 | toolkit.http.* | políticas da integração HTTP |
+| toolkit.journal.* | contenção SQLite e janelas bounded de leitura |
 | toolkit.operations.* | runtime durável, workers, rate, lifetimes e gates |
 | toolkit.report.* | CSV/XLSX e limites de reporting |
-| toolkit.sqs.* | semântica configurável de receive/visibility |
+| toolkit.s3.* | buffers e multipart tuning |
+| toolkit.sqs.* | receive, visibility e lease/reacquisition tuning |
 
 A documentação completa de tipo/default/range/impacto está no [catálogo](34-configuration-catalog.md).
 
@@ -32,8 +34,10 @@ A documentação completa de tipo/default/range/impacto está no [catálogo](34-
 - AwsProperties
 - DynamoProperties
 - HttpProperties
+- JournalProperties
 - RuntimeProperties
 - ReportProperties
+- S3Properties
 - SqsProperties
 
 @ConfigurationPropertiesScan registra os grupos. Collections expostas por properties que funcionam como contrato (tables, resources, principals, paymentHosts) são copiadas defensivamente.
@@ -44,10 +48,11 @@ A documentação completa de tipo/default/range/impacto está no [catálogo](34-
 toolkit:
   aws:
     enabled: false
+  core:
+    write-enabled: false
   operations:
     enabled: false
     writes: false
-  write-enabled: false
 ~~~
 
 Nenhum desses switches, isoladamente, autoriza uma escrita. Fora de LOCAL, o runtime também exige identidade/conta/recurso permitidos, request EXECUTE, confirmação explícita, referência operacional/motivo, plano selado e aprovação válida.
@@ -56,16 +61,24 @@ Nenhum desses switches, isoladamente, autoriza uma escrita. Fora de LOCAL, o run
 
 ~~~yaml
 toolkit:
-  minimum-free-space: 1GB
+  core:
+    minimum-free-space: 1GB
   aws:
     connection-timeout: 3s
     api-call-timeout: 35s
+  journal:
+    busy-timeout: 5s
   operations:
     approval-lifetime: 15m
     plan-lifetime: 24h
     retention: 30d
     shutdown-timeout: 25s
+  s3:
+    multipart-part-size: 8MB
+    stream-buffer-size: 64KB
   sqs:
+    acknowledgement-lease-reserve: 5s
+    receive-wait-time: 1s
     visibility-timeout: 120s
 ~~~
 
@@ -73,7 +86,7 @@ Não há mais properties novas do runtime expressas como *-millis, *-seconds ou 
 
 ## Tuning sem recompilação
 
-Valores operacionais como workers, RPS, page size, dry-run sample size, report flush cadence e physical table name vêm de configuração.
+Valores operacionais como workers, RPS, page size, dry-run sample size, SQLite windows/timeout, report flush cadence, S3 buffer/part size, SQS receive/lease tuning e physical table name vêm de configuração.
 
 Trocar uma tabela física mapeada ou workers de 16 para 32 não exige recompilar.
 

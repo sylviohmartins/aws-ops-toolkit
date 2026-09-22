@@ -9,7 +9,7 @@ Legenda: **PASS** = implementado/documentado e verificável localmente; **DECIS�
 | 3 | ordem de preferência para reuso | PASS | seção A/B |
 | 4 | inventário de utilitários | PASS | seção B |
 | 5 | collections específicas | DECISÃO | JDK direto; sem wrapper trivial |
-| 6 | collections grandes | PASS | Batching/BatchProcessor + benchmarks existentes |
+| 6 | collections grandes | PASS | Batching/BatchProcessor + teste incremental de 1.000.000 itens sem materialização global |
 | 7 | batching first-class | PASS | batch package + testes |
 | 8 | CSV reutilizável | PASS | ReportWriter/CsvReportWriter/CsvColumn |
 | 9 | CSV performance/streaming | PASS | Iterator/Session + flush configurável |
@@ -21,18 +21,18 @@ Legenda: **PASS** = implementado/documentado e verificável localmente; **DECIS�
 | 15 | typed Dynamo access | PASS | DynamoTableGateway<T> |
 | 16 | table descriptor | PASS | DynamoTableDescriptor<T> |
 | 17 | schemaless mode | PASS | runtime Document/AttributeValue preservado |
-| 18 | configuração: regra absoluta | PASS | values operacionais externalizados/revisados |
+| 18 | configuração: regra absoluta | PASS | 64 properties; SQLite/S3/SQS tuning externalizado; checker bloqueia regressões literais e estados de efeito stringificados |
 | 19 | @ConfigurationProperties | PASS | records por capability + ConfigurationPropertiesScan |
 | 20 | properties imutáveis/tipadas | PASS | Duration/DataSize/Path/URI/enums/cópias defensivas |
-| 21 | validação de properties | PASS | Bean Validation + validação canônica |
+| 21 | validação de properties | PASS | Bean Validation + validação canônica + OperationalPropertiesValidationTest |
 | 22 | nomenclatura de properties | PASS | toolkit.<capability>.* + kebab-case |
 | 23 | organização application.yml | PASS | seções por capability |
 | 24 | documentação no YAML | PASS | YAML enxuto; detalhes no catálogo |
 | 25 | configuration catalog | PASS | 34-configuration-catalog.md |
 | 26 | autocomplete properties | PASS | configuration processor + additional metadata |
 | 27 | defaults seguros | PASS | AWS/runtime/writes false |
-| 28 | magic numbers | PASS | values operacionais externalizados; limites estruturais nomeados |
-| 29 | magic strings | PASS | enums/constantes/JDK; schema de report fechado |
+| 28 | magic numbers | PASS | tuning operacional externalizado; CoreLimits/DynamoLimits/ReportLimits para limites estruturais; checker dedicado |
+| 29 | magic strings | PASS | JobState/JobMode/EffectState + constantes/JDK; estados de efeito não circulam mais como strings Java |
 | 30 | constantes no escopo correto | PASS | ReportLimits/Masking/BatchOptions locais à capability |
 | 31 | properties não são constantes | PASS | tuning em properties |
 | 32 | decision table constant/property/enum/VO | PASS | seção G |
@@ -53,7 +53,7 @@ Legenda: **PASS** = implementado/documentado e verificável localmente; **DECIS�
 | 47 | common vs domain code | PASS | regras permanecem nos workflows |
 | 48 | IO não é util | PASS | report/AWS/HTTP são componentes |
 | 49 | static utility | PASS | Batching/Hashing/Masking são pure/stateless |
-| 50 | performance de abstrações | PASS | bounded buffers/futures e benchmarks |
+| 50 | performance de abstrações | PASS | buffers/futures bounded + teste de 1M em Batching + benchmarks de ledger 1M/5M/10M |
 | 51 | evitar reflection genérica | PASS | sem universal reflection mapper |
 | 52 | functions como extensão | PASS | CsvColumn Function<T,?> e callbacks de batch |
 | 53 | generics com propósito | PASS | gateways/report/batch com generics simples |
