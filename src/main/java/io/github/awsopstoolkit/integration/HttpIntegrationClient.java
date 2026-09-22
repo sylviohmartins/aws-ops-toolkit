@@ -26,6 +26,31 @@ public final class HttpIntegrationClient implements AutoCloseable {
 
     public HttpIntegrationClient(
             URI base, Set<String> approvedHosts, int maxConcurrency, double requestsPerSecond) {
+        this(
+                base,
+                approvedHosts,
+                maxConcurrency,
+                requestsPerSecond,
+                Duration.ofSeconds(3),
+                Duration.ofSeconds(10));
+    }
+
+    public HttpIntegrationClient(
+            URI base,
+            Set<String> approvedHosts,
+            int maxConcurrency,
+            double requestsPerSecond,
+            Duration connectTimeout,
+            Duration readTimeout) {
+        if (connectTimeout == null
+                || connectTimeout.isZero()
+                || connectTimeout.isNegative()
+                || readTimeout == null
+                || readTimeout.isZero()
+                || readTimeout.isNegative()
+                || connectTimeout.compareTo(Duration.ofSeconds(30)) > 0
+                || readTimeout.compareTo(Duration.ofSeconds(60)) > 0)
+            throw new IllegalArgumentException("Invalid HTTP timeout configuration");
         if (!"https".equals(base.getScheme())
                 || base.getHost() == null
                 || !approvedHosts.contains(base.getHost())
@@ -37,11 +62,11 @@ public final class HttpIntegrationClient implements AutoCloseable {
         gate = new AwsCallGate(maxConcurrency, requestsPerSecond);
         transport =
                 HttpClient.newBuilder()
-                        .connectTimeout(Duration.ofSeconds(3))
+                        .connectTimeout(connectTimeout)
                         .followRedirects(HttpClient.Redirect.NEVER)
                         .build();
         var requestFactory = new JdkClientHttpRequestFactory(transport);
-        requestFactory.setReadTimeout(Duration.ofSeconds(10));
+        requestFactory.setReadTimeout(readTimeout);
         var client =
                 RestClient.builder()
                         .baseUrl(base.toString())

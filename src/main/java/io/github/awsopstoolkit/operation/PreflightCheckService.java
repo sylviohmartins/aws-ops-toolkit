@@ -13,9 +13,6 @@ public final class PreflightCheckService {
     public PreflightCheckService(ToolkitProperties properties, FileCheckpointStore store) {
         this.properties = properties;
         this.store = store;
-        if (properties.writeEnabled())
-            throw new IllegalStateException(
-                    "AWS write execution is not implemented in this foundation");
     }
 
     public void check(OperationMode mode, long total, long alreadyReserved) throws IOException {

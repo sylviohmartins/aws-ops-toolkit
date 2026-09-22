@@ -50,30 +50,43 @@ public final class SqsService {
         }
         ReceiveMessageRequest bounded =
                 request.toBuilder().maxNumberOfMessages(count).waitTimeSeconds(wait).build();
-        return gate.call(
-                () -> {
-                    authorization.requirePermission("sqs:ReceiveMessage", bounded.queueUrl());
-                    return client.receiveMessage(bounded);
-                });
+        var response =
+                gate.call(
+                        () -> {
+                            authorization.requirePermission(
+                                    "sqs:ReceiveMessage", bounded.queueUrl());
+                            return client.receiveMessage(bounded);
+                        });
+        response.messages().forEach(SqsService::verifyBodyMd5);
+        return response;
     }
 
     public SendMessageResponse send(SendMessageRequest request) throws InterruptedException {
-        return gate.call(
-                () -> {
-                    authorization.requirePermission("sqs:SendMessage", request.queueUrl());
-                    return client.sendMessage(request);
-                });
+        var response =
+                gate.call(
+                        () -> {
+                            authorization.requirePermission("sqs:SendMessage", request.queueUrl());
+                            return client.sendMessage(request);
+                        });
+        verifyBodyMd5(request.messageBody(), response.md5OfMessageBody());
+        return response;
     }
 
     /** Inspect Successful AND Failed entries even when the HTTP request succeeds. */
     public SendMessageBatchResponse sendBatch(SendMessageBatchRequest request)
             throws InterruptedException {
         requireBatchSize(request.entries().size());
-        return gate.call(
-                () -> {
-                    authorization.requirePermission("sqs:SendMessage", request.queueUrl());
-                    return client.sendMessageBatch(request);
-                });
+        var response =
+                gate.call(
+                        () -> {
+                            authorization.requirePermission("sqs:SendMessage", request.queueUrl());
+                            return client.sendMessageBatch(request);
+                        });
+        var bodies = new java.util.HashMap<String, String>();
+        request.entries().forEach(entry -> bodies.put(entry.id(), entry.messageBody()));
+        response.successful()
+                .forEach(entry -> verifyBodyMd5(bodies.get(entry.id()), entry.md5OfMessageBody()));
+        return response;
     }
 
     /** Acknowledge only after the operation policy has durably recorded successful processing. */
@@ -108,6 +121,29 @@ public final class SqsService {
                             "sqs:ChangeMessageVisibility", request.queueUrl());
                     return client.changeMessageVisibility(request);
                 });
+    }
+
+    static void verifyBodyMd5(Message message) {
+        verifyBodyMd5(message.body(), message.md5OfBody());
+    }
+
+    static void verifyBodyMd5(String body, String expected) {
+        if (expected == null || expected.isBlank()) return;
+        try {
+            var digest = java.security.MessageDigest.getInstance("MD5");
+            String actual =
+                    java.util.HexFormat.of()
+                            .formatHex(
+                                    digest.digest(
+                                            Objects.toString(body, "")
+                                                    .getBytes(
+                                                            java.nio.charset.StandardCharsets
+                                                                    .UTF_8)));
+            if (!expected.equalsIgnoreCase(actual))
+                throw new IllegalArgumentException("SQS body MD5 mismatch");
+        } catch (java.security.NoSuchAlgorithmException impossible) {
+            throw new IllegalStateException("MD5 unavailable", impossible);
+        }
     }
 
     private static void requireBatchSize(int size) {

@@ -49,3 +49,22 @@ toolkit:
     profile: ${AWS_PROFILE:}
     expected-account: ${TOOLKIT_EXPECTED_ACCOUNT:}
     max-connections: 8
+    connection-timeout-millis: 3000
+    acquisition-timeout-millis: 2000
+    socket-timeout-millis: 25000
+    max-idle-millis: 30000
+    api-call-attempt-timeout-millis: 30000
+    api-call-timeout-millis: 35000
+operations:
+  enabled: false
+  writes: false
+  requests-per-second: 10
+  workers: 2
+  page-size: 100
+  plan-lifetime-seconds: 86400
+  approval-lifetime-seconds: 900
+  retention-days: 30
+  http-connect-timeout-millis: 3000
+  http-response-timeout-millis: 10000
+  http-max-attempts: 3
+  http-max-retry-after-seconds: 10

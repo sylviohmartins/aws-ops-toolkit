@@ -38,23 +38,28 @@ public class AwsClientConfiguration {
 
     @Bean(destroyMethod = "close")
     SdkHttpClient awsTransport(ToolkitProperties p) {
+        var aws = p.aws();
         return Apache5HttpClient.builder()
-                .maxConnections(p.aws().maxConnections())
-                .connectionTimeout(Duration.ofSeconds(3))
-                .connectionAcquisitionTimeout(Duration.ofSeconds(2))
-                .socketTimeout(Duration.ofSeconds(25))
-                .connectionMaxIdleTime(Duration.ofSeconds(30))
+                .maxConnections(aws.maxConnections())
+                .connectionTimeout(Duration.ofMillis(aws.connectionTimeoutMillis()))
+                .connectionAcquisitionTimeout(Duration.ofMillis(aws.acquisitionTimeoutMillis()))
+                .socketTimeout(Duration.ofMillis(aws.socketTimeoutMillis()))
+                .connectionMaxIdleTime(Duration.ofMillis(aws.maxIdleMillis()))
                 .build();
     }
 
     @Bean
     @org.springframework.context.annotation.Scope("prototype")
-    ClientOverrideConfiguration awsOverrides() {
-        // Shared examples may write: one attempt. Enable three only for proven-safe read/idempotent
-        // clients.
+    ClientOverrideConfiguration awsOverrides(ToolkitProperties properties) {
+        var aws = properties.aws();
+        if (aws.apiCallAttemptTimeoutMillis() > aws.apiCallTimeoutMillis())
+            throw new IllegalStateException("AWS attempt timeout cannot exceed total timeout");
+        // SDK retry stays at one attempt by design. Safe read retries belong to JobContext,
+        // avoiding
+        // multiplicative retry layers for effects whose remote outcome may be ambiguous.
         return ClientOverrideConfiguration.builder()
-                .apiCallAttemptTimeout(Duration.ofSeconds(30))
-                .apiCallTimeout(Duration.ofSeconds(35))
+                .apiCallAttemptTimeout(Duration.ofMillis(aws.apiCallAttemptTimeoutMillis()))
+                .apiCallTimeout(Duration.ofMillis(aws.apiCallTimeoutMillis()))
                 .retryStrategy(StandardRetryStrategy.builder().maxAttempts(1).build())
                 .putAdvancedOption(SdkAdvancedClientOption.USER_AGENT_SUFFIX, "aws-ops-toolkit/0.1")
                 .build();
