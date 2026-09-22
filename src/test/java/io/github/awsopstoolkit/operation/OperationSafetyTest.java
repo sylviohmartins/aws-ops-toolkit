@@ -29,7 +29,8 @@ class OperationSafetyTest {
                 10,
                 writes,
                 "test-only-local-token-not-for-deployment",
-                new ToolkitProperties.Aws(false, "us-east-1", "", "", 2));
+                new ToolkitProperties.Aws(
+                        false, "us-east-1", "", "", 2, 3000, 2000, 25000, 30000, 30000, 35000));
     }
 
     @Test
@@ -46,11 +47,13 @@ class OperationSafetyTest {
             assertThrows(
                     IllegalArgumentException.class,
                     () -> production.check(OperationMode.DRY_RUN, 10, 0));
+            var writeGateEnabled =
+                    new PreflightCheckService(
+                            properties(ToolkitProperties.Environment.LOCAL, true), store);
+            assertDoesNotThrow(() -> writeGateEnabled.check(OperationMode.DRY_RUN, 10, 0));
             assertThrows(
-                    IllegalStateException.class,
-                    () ->
-                            new PreflightCheckService(
-                                    properties(ToolkitProperties.Environment.LOCAL, true), store));
+                    IllegalArgumentException.class,
+                    () -> writeGateEnabled.check(OperationMode.EXECUTE, 10, 0));
         }
     }
 

@@ -73,7 +73,7 @@ public final class DynamoDbService {
             checkCancelled(cancelled);
             QueryRequest request =
                     template.toBuilder()
-                            .exclusiveStartKey(cursor)
+                            .exclusiveStartKey(cursor.isEmpty() ? null : cursor)
                             .limit(pageLimit(template.limit()))
                             .returnConsumedCapacity(ReturnConsumedCapacity.INDEXES)
                             .build();
@@ -197,7 +197,7 @@ public final class DynamoDbService {
                     template.toBuilder()
                             .segment(segment)
                             .totalSegments(totalSegments)
-                            .exclusiveStartKey(cursor)
+                            .exclusiveStartKey(cursor.isEmpty() ? null : cursor)
                             .limit(pageLimit(template.limit()))
                             .returnConsumedCapacity(ReturnConsumedCapacity.INDEXES)
                             .build();

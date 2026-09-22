@@ -6,16 +6,16 @@ Esta revisão cobre **o desenho** solicitado e explicita o que o skeleton prova.
 
 | Cenário | Controle no desenho completo | Invariante e reação esperada | Validação ainda necessária |
 | --- | --- | --- | --- |
-| A — 10 milhões no DynamoDB | Paginação, admissão antes de submeter, fila/bytes limitados e cursores por segmento | Memória depende da janela, nunca do total; página vazia com cursor continua | Lab 1/5/10 milhões e Scan HML com memória medida |
+| A — 10 milhões no DynamoDB | Paginação, admissão antes de submeter, fila/bytes limitados e cursores por segmento | Memória depende da janela, nunca do total; página vazia com cursor continua | **Baseline local 1M/5M/10M concluída sem OOM**; Scan/Query contra DynamoDB DEV/HML real ainda deve medir consumed capacity, latência e heap |
 | B — 500 mil alterações | Plano, dry-run, canary, conditional writes, ledger e rate/error budget | Nenhum efeito sem intenção/guardrail; nenhum avanço sobre item desconhecido | HML com escrita sintética, falhas e reconciliação |
 | C — Credencial expira em 48% | Barreira global de admissão, drenagem por deadline, checkpoint e `AUTHENTICATION_REQUIRED` | Novas escritas param; retomada exige identidade autorizada e reconciliação | Provider real, expiração/renovação legítima e mudança de role |
-| D — DynamoDB throttla | Retry SDK limitado, orçamento de taxa/capacidade, redução manual/AIMD futuro | Retry não multiplica; pressão cai e persistência permanece consistente | HML isolado ou injeção controlada, contagem de tentativas |
+| D — DynamoDB throttla | Retry SDK limitado, orçamento de taxa/capacidade e AIMD de taxa **e concorrência** | Retry não multiplica; pressão cai e persistência permanece consistente | AIMD/retries têm testes locais; throttling/quota/consumed capacity reais continuam DEV/HML isolado |
 | E — HTTP 429 | Classificação, `Retry-After` limitado por deadline, rate limiter e bulkhead | Não criar fila ilimitada nem reexecutar ação não idempotente | Stub/HML com rajadas e cancelamento durante espera |
 | F — HTTP 500 | Retry só seguro, circuit breaker/budget, bloqueio de enriquecimento inválido | Sem fallback inventando confirmação; falha persistente pausa | Stub de falha e verificação de zero escrita indevida |
 | G — Disco esgota | Estimativa/reserva/monitoramento, ledger autoridade e checkpoint conservador | Sem novas escritas quando evidência não pode persistir; relatório pode ficar parcial | Filesystem/quota de teste; crash no ponto de falha e recuperação |
-| H — Stop no IntelliJ | Graceful shutdown quando possível; estado durável durante o job | Término forçado não depende de hook; detectar interrupção e unknowns | Morte controlada do processo em pontos antes/depois de side effect |
+| H — Stop no IntelliJ | Graceful shutdown quando possível; estado durável durante o job | Término forçado não depende de hook; detectar interrupção e unknowns | Smoke local força crash/restart e valida recuperação; encerramento pelo IDE/OS e filesystem corporativo ainda merecem ensaio DEV/HML |
 | I — Mesmo job retomado | Lock, plano/schema/versão imutáveis, ledger e idempotency keys | Não repetir efeitos confirmados; cursor é posição segura, não prova de efeito | Retomar após crash e tentativa por segunda instância |
-| J — Alteração concorrente | ConditionExpression de versão/estado e update mínimo | Conflito não sobrescreve estado alheio; reavaliar ou separar | Concorrência real entre dois writers em HML |
+| J — Alteração concorrente | ConditionExpression de versão/estado e update mínimo | Conflito não sobrescreve estado alheio; reavaliar ou separar | `DockerLabTest.concurrentDynamoChangeIsDetectedBeforeDownstreamEffects` passou; writers concorrentes contra DynamoDB real continuam DEV/HML |
 | K — Conta errada | STS com provider efetivo, allowlists e comparação de alvo antes da escrita | Falha fechada; profile/role selecionado não é prova suficiente | Credenciais válidas para conta divergente e recursos de nome igual |
 
 Essas respostas só valem quando todos os componentes dependentes estiverem implementados e homologados. Caso B também exige resolver a fronteira update+evento do [cenário complexo](18-complex-scenario.md). Caso G não promete checkpoint final se o disco já falhou. Caso H não promete cleanup após encerramento forçado. Caso I não confunde JSON atômico local com transação distribuída.
@@ -43,32 +43,32 @@ Inspeção de código não é registro de execução. Este inventário foi confe
 | Foundation | POM Java 25/Boot 4.1.1/SDK BOM, Wrapper, profiles e properties | Homologação corporativa continua pendente |
 | API local | Controle autenticado, bind loopback e operação assíncrona | Sem UI/browser e sem exposição remota |
 | Operação de exemplo | `synthetic-inventory`, dados determinísticos e `DRY_RUN` LOCAL | Não lê nem corrige pagamentos AWS |
-| Admissão | Teto de jobs ativos e VT por job | Pipeline massivo por item/AIMD são desenho futuro |
+| Admissão | Foundation limita jobs; runtime admite um job operacional ativo, usa virtual threads, rate limit e AIMD de taxa+concorrência | Limites sustentáveis contra AWS real dependem de DEV/HML |
 | Pause/cancel/resume | Estados locais, pausa/cancelamento cooperativos e resume de PAUSED/INTERRUPTED | FAILED/CANCELLED não são retomados pela implementação inicial |
-| Persistência | `checkpoint.json` e chunks CSV com escrita/rename atômico e lock de diretório | Sem ledger transacional de escrita, garantia universal contra power loss ou duas máquinas |
-| Relatório | CSV por chunks confirmados, concatenado no download | Sem manifesto, summary XLSX, pre-image AWS ou upload produtivo pronto |
+| Persistência | Foundation mantém JSON/chunks; runtime usa SQLite WAL/FULL com jobs, cursores, tasks, effects e audit, intenção durável antes do efeito | Não há transação distribuída com AWS nem garantia universal de power-loss/filesystem corporativo |
+| Relatório | Foundation CSV; runtime gera plano sanitizado, dry-run before/after, erros, summary, manifesto, CSV streaming e XLSX/SXSSF | Destino corporativo, cadeia de custódia e política final de colunas/PII dependem do ambiente |
 | Disco | Estimativa sintética e reserva verificada no início/commit | Falha de storage pode deixar FAILED e exigir inspeção; não há recovery produtivo completo |
-| Observabilidade | Logs estruturados/rolling, Actuator e contador de registros processados | Catálogo completo de métricas, auditoria, OTel e publisher SDK são blueprint |
-| AWS/HTTP | Exemplos de configuração/serviços e controles específicos | Não constituem operação de escrita liberada; guardrails/ledger/end-to-end produtivos faltam |
+| Observabilidade | Logs estruturados, Actuator, audit SQLite e métricas de dispatch, registros, capacity, AWS/HTTP requests, failures, retries, throttling, latência e transições | OTel/Datadog/dashboard/alertas corporativos continuam dependentes do ambiente |
+| AWS/HTTP | Workflows concretos para DynamoDB/SQS/SNS/Lambda/S3/HTTP, guardrails, ledger e laboratório Moto/HTTP exercitável | IAM/SSO/Break Glass, quotas, proxy/TLS e semântica real dos downstreams continuam `VALIDAR NO AMBIENTE` |
 | Testes pequenos | Arquivos focados em safety, checkpoint e CSV | Resultado depende de execução do build, registrado separadamente |
 
 ## Validação executada: registro factual
 
-Validação local concluída em **2026-09-20**, Windows, Eclipse Temurin **25.0.4.1+1**, Maven Wrapper **3.9.12**, Spring Boot **4.1.1**. A pesquisa principal foi realizada em 18/09, com conferências complementares em 20/09. Os resultados abaixo foram observados na execução dos comandos, sem acesso a serviços AWS.
+Validação local atualizada em **2026-09-22**, Windows 11, Oracle JDK **25.0.4.1** em `C:\Development\tools\java\jdk-25.0.4.1`, Maven Wrapper **3.9.12** e Spring Boot **4.1.1**. A pesquisa principal foi realizada em 18/09, com conferências complementares posteriores. Os resultados abaixo foram observados localmente, sem acesso a serviços AWS reais; Moto e a API HTTP sintética são laboratório, não homologação AWS.
 
 | Verificação | Registro nesta revisão |
 | --- | --- |
 | Pesquisa oficial e revisão dos requisitos | Realizadas para a documentação, fontes inline e decisões separadas de hipóteses |
 | Inspeção de escopo do código | Realizada; limitações listadas acima |
-| Build/compilação/formatação/testes | `mvnw.cmd -B -ntp spotless:apply verify -Pstatic-analysis`: BUILD SUCCESS; **14 testes**, zero falhas/erros/skips; release 25 sem preview |
+| Build/compilação/formatação/testes | `mvnw.cmd -B -ntp verify -Pstatic-analysis -Dtoolkit.lab=true`: BUILD SUCCESS; **61 testes**, zero falhas/erros e **2 skips**, exclusivamente os benchmarks condicionais já executados separadamente; release 25 sem preview. Os **6 `DockerLabTest`** passaram no mesmo `verify` |
 | Análise estática | SpotBugs 4.10.4.1, effort Max, threshold High: zero findings e zero erros da ferramenta; não equivale a auditoria de vulnerabilidades |
-| Startup positivo e smoke LOCAL | `scripts/smoke.ps1`: PASS para token/Origin, bloqueio EXECUTE, limite de admissão, CSV, pause/resume, crash forçado e cancelamento; 20.000 linhas de dados retomadas sem perda/duplicação no relatório |
-| Startup negativo | Processo recusou iniciar sem token e com `toolkit.write-enabled=true`; exit code não zero e motivo esperado confirmado |
+| Startup positivo e smoke LOCAL | Foundation `scripts/smoke.ps1`: PASS, evidência `target/smoke/54355a66-d9b6-481c-8bf9-d57299e29ece`. Runtime `scripts/lab-smoke.ps1`: PASS para `DRY_RUN` sem efeitos, plano/hash, pause, crash/restart, aprovação, canary, promoção, CSV/XLSX e manifesto; evidência `target/lab-smoke/c55b1444-46de-4173-9d80-ac411780baea` |
+| Startup negativo / gates de escrita | Ausência de token continua fail-closed. `toolkit.write-enabled=true` deixou de ser erro de startup porque é agora um dos dois gates deliberados do runtime; fora de LOCAL, efeitos exigem também `operations.writes=true`, request `EXECUTE`, confirmação, referência operacional, motivo, plano selado e aprovação vigente. Testes regressivos cobrem gates ausentes |
 | Exemplo de nova operação | `SyntheticParityOperation` do blueprint compilado com `javac --release 25` e classpath do projeto |
-| Documentação | `python scripts/check-docs.py`: **46 documentos Markdown**, links locais e blocos de código balanceados aprovados; diagramas revisados como fonte Mermaid |
+| Documentação | `python scripts/check-docs.py`: **47 documentos Markdown**, links locais e blocos de código balanceados aprovados; `git diff --check` também aprovado; diagramas revisados como fonte Mermaid |
 | CI | Workflow Windows/Java25 entregue com Actions fixadas por SHA; execução no GitHub não realizada |
-| Benchmark de milhões de itens | Não executado nesta revisão; plano em `19-benchmark-plan.md` |
-| Integração AWS/HTTP DEV/HML | Não executada nesta revisão |
+| Benchmark de milhões de itens | `scripts/benchmark.ps1` executado com `-Xmx256m` após remover um `COUNT(*)` global por página: 1M = 1.000.000/1.000.000, ~27,64 s, pico ~46,0 MiB; 5M = 5.000.000/5.000.000, ~142,40 s, pico ~43,9 MiB; 10M = 10.000.000/10.000.000, ~320,48 s, pico ~45,9 MiB. Crescimento de heap ficou ~31,8–33,8 MiB e não acompanhou linearmente o volume. O sweep local 1/4/8/16/32/64/128/256 também passou; não houve platô até 256 no workload sintético, portanto nenhum desses valores é teto/recomendação AWS |
+| Integração AWS/HTTP | Laboratório Docker/Moto + API HTTP sintética executado: **6/6 `DockerLabTest` PASS** e `lab-smoke` PASS. DEV/HML contra AWS e downstreams reais continua não executado |
 | Teste destrutivo ou escrita de produção | Não executado; não autorizado por esta documentação |
 | Homologação corporativa/Break Glass | `VALIDAR NO AMBIENTE` |
 
@@ -76,7 +76,7 @@ Testes focados cobrem paginação vazia com cursor, falha de callback sem avanç
 
 Durante a revisão foram corrigidos: ownership do worker na transição PAUSED/resume, vínculo de checkpoint à versão da regra, retorno prematuro marcado incorretamente como conclusão, autenticação em redispatch assíncrono de CSV e Content-Type do relatório. O build e o smoke foram repetidos após as correções.
 
-O JDK 25 de validação foi extraído em diretório temporário de ferramentas, com checksum SHA-256 verificado. O Java padrão da máquina não foi alterado. A resolução Maven nesta máquina utilizou o trust store Windows via opções locais de JVM para confiar nas raízes já autorizadas pelo sistema; a validação TLS não foi desabilitada e essa configuração específica não foi colocada no POM. Spotless emitiu aviso de API `sun.misc.Unsafe` em dependência de tooling, sem falha de formatação/compilação; acompanhar atualização do plugin. Artefatos brutos de validação estão em `target/` e logs ignorados pelo Git.
+O JDK 25 usado nesta rodada é `C:\\Development\\tools\\java\\jdk-25.0.4.1`. O Java padrão da máquina não foi alterado; os comandos de validação apontaram `JAVA_HOME` e `PATH` apenas para o processo executado. A resolução Maven nesta máquina utilizou o trust store Windows via opções locais de JVM para confiar nas raízes já autorizadas pelo sistema; a validação TLS não foi desabilitada e essa configuração específica não foi colocada no POM. Spotless emitiu aviso de API `sun.misc.Unsafe` em dependência de tooling, sem falha de formatação/compilação; acompanhar atualização do plugin. Artefatos brutos de validação estão em `target/` e logs ignorados pelo Git.
 
 ## Checklist para primeira utilização segura
 

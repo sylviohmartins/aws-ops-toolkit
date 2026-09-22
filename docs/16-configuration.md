@@ -19,7 +19,7 @@ Faixa aceita pelo código é diferente de faixa segura para produção. A coluna
 | `toolkit.minimum-free-bytes` | `1073741824` | Bytes; mínimo aceito `1048576` | Reserva de 1 GiB no default; 1 MiB existe apenas para ensaio pequeno |
 | `toolkit.max-concurrent-operations` | `2` | Jobs inteiros; 1–4 | Limite de admissão global; PROD YAML reduz a 1 |
 | `toolkit.page-size` | `100` | Registros por página sintética; 1–1.000 | Memória temporária/arquivo por chunk e granularidade de checkpoint |
-| `toolkit.write-enabled` | `false` | Boolean | `true` é recusado no startup: escrita AWS não está liberada nessa foundation |
+| `toolkit.write-enabled` | `false` | Boolean | Gate global de escrita fora de LOCAL; o runtime exige este gate **e** `operations.writes=true`, além de `EXECUTE`, confirmação, referência operacional e aprovação |
 | `toolkit.local-token` | `${TOOLKIT_LOCAL_TOKEN:}` | Não branco; 32–256 caracteres | Obrigatório para autenticação API/Actuator; vazio faz startup falhar |
 | `toolkit.aws.enabled` | `false` | Boolean | Cria beans opcionais somente se `true`; não registra nova operação nem autoriza efeitos |
 | `toolkit.aws.region` | `${AWS_REGION:us-east-1}` | String não branca | Região dos clients opcionais; `us-east-1` é fallback demonstrativo, não alvo corporativo presumido |
@@ -27,7 +27,7 @@ Faixa aceita pelo código é diferente de faixa segura para produção. A coluna
 | `toolkit.aws.expected-account` | `${TOOLKIT_EXPECTED_ACCOUNT:}` | Ao habilitar AWS, exatamente 12 dígitos | Conta esperada para comparação STS; não comprova permissão da ação |
 | `toolkit.aws.max-connections` | `8` | Conexões; 1–64 | Teto do transporte Apache5 compartilhado pelos clients AWS do exemplo |
 
-Não há flag de YAML que transforme o inventário sintético em correção de produção. Preflight recusa `EXECUTE` e qualquer ambiente não LOCAL. O serviço de credential health existe, mas não constitui preflight produtivo integrado de todas as operações. Campos desconhecidos no JSON da API são recusados pela configuração Jackson; isso **não significa** que toda chave YAML desconhecida é recusada pelo binder atual.
+A API sintética `/api/v1/operations` continua restrita a LOCAL/DRY_RUN. O runtime `/api/v1/jobs` possui fluxo separado: fora de LOCAL, efeitos exigem simultaneamente `toolkit.write-enabled=true`, `operations.writes=true`, request `EXECUTE`, confirmação explícita, incidente/change conforme ambiente, motivo, plano selado e aprovação vigente. Isso não equivale a homologação corporativa. Campos desconhecidos no JSON da API são recusados pela configuração Jackson; isso **não significa** que toda chave YAML desconhecida é recusada pelo binder atual.
 
 | Chave Spring/servidor/log | Default explícito | Unidade / política | Impacto |
 | --- | --- | --- | --- |
@@ -100,6 +100,6 @@ O exemplo cobre metadados/allowlists, aprovação, credenciais, timeouts/retry, 
 
 Validações cruzadas obrigatórias no TARGET: soma de jobs não excede orçamento de recurso; fila também é limitada por bytes; `TotalSegments` imutável no resume; deadlines incluem espera/retry; planos sem conta/região/alvo inequívocos falham; `EXECUTE` exige simultaneamente autorização vigente, identidade correta, flag, modo, incidente, motivo, plano confirmado e canary. Taxa `null` não significa ilimitada: significa **não configurada e bloqueante** para chamada real.
 
-Hot tuning ainda não existe na API inicial. TARGET admite reduzir taxa/concorrência sem matar tarefas; aumentar apenas até teto aprovado e com auditoria. Conta, região, recurso, regra, modo, idempotency keys e particionamento não mudam no job; modificação exige novo plano. Properties de segurança são capturadas numa configuração imutável por operação, não lidas oportunisticamente de um YAML que pode mudar durante a execução.
+O runtime operacional já expõe hot tuning de `requestsPerSecond` até o teto configurado e o limitador AIMD reduz/adapta taxa e concorrência efetiva após throttling/respostas saudáveis. O TARGET continua exigindo que aumentos permaneçam dentro de teto aprovado e auditável. Conta, região, recurso, regra, modo, idempotency keys e particionamento não mudam no job; modificação exige novo plano. Properties de segurança são capturadas numa configuração imutável por operação, não lidas oportunisticamente de um YAML que pode mudar durante a execução.
 
 **VALIDAR NO AMBIENTE:** locations externas aprovadas, working directory, proxy/TLS, provider/SSO, conta/role, orçamento AWS/HTTP, políticas de criptografia, retenção, logs, dumps e armazenamento. Nenhuma configuração legítima elimina esses requisitos.
