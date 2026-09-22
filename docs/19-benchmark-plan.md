@@ -1,6 +1,6 @@
 # Performance Lab: plano reproduzível
 
-**Status: plano + baseline local executada em 22/09/2026.** O ledger foi medido com 1M, 5M e 10M de candidatos sob `-Xmx256m`, e o limitador/virtual threads passaram por sweep local 1→256. Esses números validam memória/durabilidade e o harness local; não comprovam throughput, quotas ou saturação AWS. Testes remotos continuam restritos a DEV/HML isolados e autorizados. Não realizar testes destrutivos ou de saturação em produção.
+**Status: plano + baselines locais executadas em 22/09/2026.** O ledger foi medido com 1M, 5M e 10M de candidatos sob `-Xmx256m`. O Performance Lab dedicado também percorreu até 100M unidades sintéticas por cenário, com repetição, mediana, dispersão, sweeps de concorrência/page size/seletividade e oito perfis de referência. Esses números validam memória, boundedness e comportamento local; não comprovam throughput, quotas ou saturação AWS. Testes remotos continuam restritos a DEV/HML isolados e autorizados. Resultado detalhado: [Performance Lab 100M](36-performance-lab-100m.md). Não realizar testes destrutivos ou de saturação em produção.
 
 ## Perguntas e ambientes
 
@@ -14,7 +14,7 @@ O experimento deve responder: qual o menor nível de concorrência que entrega t
 | DEV/HML isolado | Recursos e quotas aprovados; leitura/escrita sintética limitada | Comportamento remoto, credenciais, rate limiting e custo real naquele ambiente |
 | Ensaio de falhas | Crash controlado, auth expirada, disco simulado cheio | Recuperação e auditabilidade; independente de records/s |
 
-Para dezenas de milhões, ampliar o ensaio para 30 milhões apenas após 10 milhões estabilizarem heap/disco. O endpoint sintético inicial aceita no máximo 10 milhões; 30 milhões exige harness de laboratório separado ou evolução revisada desse limite, sem apresentar esse ensaio como executável pela API atual. Volume não deve virar materialização prévia em heap: gerar registro/página deterministicamente com seed e tamanhos declarados.
+Para dezenas de milhões, usar o harness dedicado do Performance Lab em vez do endpoint sintético inicial. O laboratório separado suporta referência progressiva até **100 milhões**, com trava explícita para o ledger pesado acima de 30M e sem apresentar o ensaio como throughput AWS. Volume não deve virar materialização prévia em heap: gerar registro/página deterministicamente com seed e tamanhos declarados.
 
 ## Protocolo
 

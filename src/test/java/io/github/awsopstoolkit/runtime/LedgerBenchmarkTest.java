@@ -28,7 +28,7 @@ class LedgerBenchmarkTest {
     @Test
     @org.junit.jupiter.api.Timeout(1800)
     void recordsConfiguredCandidateLedgerMeasurements() throws Exception {
-        assertTrue(RECORDS >= 1 && RECORDS <= 30_000_000);
+        assertTrue(RECORDS >= 1 && RECORDS <= 100_000_000);
         assertTrue(PAGE_SIZE >= 1 && PAGE_SIZE <= 10_000);
         var json = JsonMapper.builder().build();
         var runtime = Runtime.getRuntime();
