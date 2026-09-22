@@ -4,7 +4,7 @@ Esta é a API do **skeleton LOCAL/DRY_RUN**, conferida no [controller](../src/ma
 
 ## Autenticação e execução
 
-`Authorization: Bearer <token>` é obrigatório em todas as rotas, inclusive health/metrics. O token vem de `TOOLKIT_LOCAL_TOKEN`, tem entre **32 e 256 caracteres** e não é gerado automaticamente pelo servidor. Configuração ausente/inválida impede startup. Requisição sem token correto ou com header `Origin` recebe **401**; não há UI de navegador nesta versão. O servidor usa `127.0.0.1` por default.
+`Authorization: Bearer <token>` é obrigatório em todas as rotas, inclusive health/metrics. O token vem de `TOOLKIT_CORE_LOCAL_TOKEN`, tem entre **32 e 256 caracteres** e não é gerado automaticamente pelo servidor. Configuração ausente/inválida impede startup. Requisição sem token correto ou com header `Origin` recebe **401**; não há UI de navegador nesta versão. O servidor usa `127.0.0.1` por default.
 
 A configuração é stateless e não usa login/senha nem cookie de sessão. CORS não é habilitado. Não colocar o token em query string, arquivos versionados ou saída de diagnóstico. O PowerShell abaixo gera um valor aleatório apenas em memória, roda o Wrapper e inicia a aplicação em background para que as chamadas usem o mesmo token, sem copiá-lo entre terminais.
 
@@ -21,9 +21,9 @@ try {
 } finally {
     $toolkitRandom.Dispose()
 }
-$env:TOOLKIT_LOCAL_TOKEN = [Convert]::ToBase64String($toolkitTokenBytes)
+$env:TOOLKIT_CORE_LOCAL_TOKEN = [Convert]::ToBase64String($toolkitTokenBytes)
 [Array]::Clear($toolkitTokenBytes, 0, $toolkitTokenBytes.Length)
-$toolkitHeaders = @{ Authorization = 'Bearer ' + $env:TOOLKIT_LOCAL_TOKEN }
+$toolkitHeaders = @{ Authorization = 'Bearer ' + $env:TOOLKIT_CORE_LOCAL_TOKEN }
 
 $toolkitProject = (Get-Location).Path
 $toolkitJar = (Resolve-Path 'target/aws-ops-toolkit-0.1.0-SNAPSHOT.jar').Path
@@ -33,10 +33,10 @@ New-Item -ItemType Directory -Path $toolkitRunDirectory | Out-Null
 $toolkitArguments = @(
     '-jar', ('"' + $toolkitJar + '"'),
     '--server.port=18082',
-    '--toolkit.environment=LOCAL',
-    '--toolkit.write-enabled=false',
+    '--toolkit.core.environment=LOCAL',
+    '--toolkit.core.write-enabled=false',
     '--toolkit.aws.enabled=false',
-    ('"--toolkit.data-directory=' + (Join-Path $toolkitRunDirectory 'data') + '"')
+    ('"--toolkit.core.data-directory=' + (Join-Path $toolkitRunDirectory 'data') + '"')
 )
 $toolkitProcess = Start-Process -FilePath $toolkitJava -ArgumentList $toolkitArguments `
     -WorkingDirectory $toolkitProject -WindowStyle Hidden -PassThru `
@@ -170,7 +170,7 @@ Após concluir/cancelar o job e salvar o relatório:
 ```powershell
 if (!$toolkitProcess.HasExited) { Stop-Process -Id $toolkitProcess.Id }
 $toolkitHeaders.Clear()
-Remove-Item Env:TOOLKIT_LOCAL_TOKEN
+Remove-Item Env:TOOLKIT_CORE_LOCAL_TOKEN
 ```
 
 `Stop-Process` encerra somente o processo criado no exemplo. Se houver job ativo, seu próximo uso dependerá da recuperação do checkpoint; não significa graceful shutdown garantido. Em foreground, preferir encerramento normal e aguardar o fechamento. Manter o diretório de dados se quiser testar recuperação; outputs do exemplo estão em `target/`, ignorado pelo Git. Para um ensaio automatizado local, usar [scripts/smoke.ps1](../scripts/smoke.ps1).
