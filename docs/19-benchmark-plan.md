@@ -1,6 +1,6 @@
 # Performance Lab: plano reproduzível
 
-**Status: plano, sem resultados medidos.** Benchmark massivo, limites de throughput e comportamento AWS remoto não foram comprovados pela simples existência do skeleton. Usar dados sintéticos, stubs locais e recursos DEV/HML isolados e autorizados. Não realizar testes destrutivos ou de saturação em produção.
+**Status: plano + baseline local executada em 22/09/2026.** O ledger foi medido com 1M, 5M e 10M de candidatos sob `-Xmx256m`, e o limitador/virtual threads passaram por sweep local 1→256. Esses números validam memória/durabilidade e o harness local; não comprovam throughput, quotas ou saturação AWS. Testes remotos continuam restritos a DEV/HML isolados e autorizados. Não realizar testes destrutivos ou de saturação em produção.
 
 ## Perguntas e ambientes
 
@@ -44,12 +44,32 @@ O benchmark da engine não é benchmark do SDK nem do serviço AWS. HML comparti
 
 Guardar `benchmark-manifest.json`, configuração sanitizada, `samples.csv`, relatório final, JFR e log GC quando habilitados. Coletar items/s, pages/s, chamadas/tentativas AWS/s, capacidade, CPU, RSS, heap usado após GC, allocation rate, pausas/tempo de GC, platform/virtual threads, in-flight, bytes de fila, p50/p95/p99, throttling, retry rate, tempo de checkpoint, fsync e tamanho de artefatos. Registrar amostragem e dados ausentes.
 
-Tabela de resultados a preencher após execução:
+## Resultados locais executados em 22/09/2026
 
-| Concorrência | Items/s | p95 total / remoto | CPU | Heap estabilizado | Retry / throttle | Disco e checkpoint | Resultado |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | Não medido | Não medido | Não medido | Não medido | Não medido | Não medido | Pendente |
-| 4–256 | Não medido | Não medido | Não medido | Não medido | Não medido | Não medido | Sweep conforme limites |
+O benchmark de ledger usou páginas de 1.000 candidatos, Java 25.0.4.1, Windows 11, 16 processadores lógicos e `-Xmx256m`. Uma primeira execução revelou custo quadrático porque cada página fazia `COUNT(*)` global sobre `tasks`. O hot path foi substituído por contador transacional `planned_records`, preservando rollback, deduplicação e budget. Os números abaixo são da reexecução **após** a correção:
+
+| Candidatos | Inseridos/reportados | Tempo total medido | Pico heap | Crescimento heap | Ledger final em disco |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 1.000.000 | 1.000.000 / 1.000.000 | 27,64 s | 45,96 MiB | 33,76 MiB | 138,9 MiB |
+| 5.000.000 | 5.000.000 / 5.000.000 | 142,40 s | 43,92 MiB | 31,78 MiB | 705,9 MiB |
+| 10.000.000 | 10.000.000 / 10.000.000 | 320,48 s | 45,90 MiB | 33,74 MiB | 1.424,3 MiB |
+
+O heap não cresceu proporcionalmente ao volume e nenhum cenário produziu OOME. O disco cresce aproximadamente com o ledger, como esperado; espaço livre continua sendo gate de preflight.
+
+O sweep local usa 4.096 tarefas sintéticas de 2 ms e mede apenas virtual threads + limitador local. Não inclui rede, SDK, AWS, quotas ou throttling real:
+
+| Concorrência | tasks/s | p95 | p99 | CPU máquina estimada |
+| ---: | ---: | ---: | ---: | ---: |
+| 1 | 95 | 40.208 ms | 42.476 ms | 0,23% |
+| 4 | 298 | 13.059 ms | 13.592 ms | 0,38% |
+| 8 | 606 | 6.404 ms | 6.680 ms | 0,45% |
+| 16 | 1.184 | 3.300 ms | 3.427 ms | 0,37% |
+| 32 | 2.257 | 1.722 ms | 1.791 ms | 0,81% |
+| 64 | 4.333 | 905 ms | 941 ms | 0,10% |
+| 128 | 10.076 | 381 ms | 402 ms | 6,97% |
+| 256 | 21.028 | 176 ms | 191 ms | 7,02% |
+
+Não houve platô nesse workload local até 256. Portanto o sweep **não define** concorrência recomendada para AWS; o teto operacional deve ser encontrado em DEV/HML com quotas, consumed capacity, throttling e latência reais.
 
 Selecionar o ponto anterior ao platô: por exemplo, ganho de throughput menor que 5% com duplicação de concorrência e crescimento de latência indica que elevar mais não se justifica. Esse limiar é **DECISÃO de laboratório ajustável**, não lei universal. Aplicar margem operacional abaixo do teto medido e confirmar SLA/orçamento do downstream.
 

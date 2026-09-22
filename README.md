@@ -1,8 +1,8 @@
 # aws-ops-toolkit
 
-Arquitetura pesquisada, plano de implementação e código-base Java para operações locais de engenharia em AWS. A proposta é preparar autenticação, clients, limites, relatórios e recuperação antes de uma war room, deixando a nova operação concentrada na regra do incidente.
+Toolkit Java para planejar, aprovar e executar operações locais de engenharia em AWS com limites, evidência durável e recuperação. A arquitetura continua orientada a uma regra pequena por incidente: `selecionar → validar → transformar → executar → verificar`.
 
-**O código executável atual oferece uma demonstração sintética em LOCAL/DRY_RUN.** Ela tem REST assíncrono, CSV paginado, checkpoint, pausa, cancelamento e retomada. Os adapters AWS/HTTP são exemplos compiláveis e não estão ligados a uma operação produtiva. Escrita AWS permanece indisponível; configurar uma credencial poderosa ou mudar uma flag não implementa os controles pendentes.
+O código atual contém dois níveis executáveis. A foundation mantém a demonstração sintética LOCAL/DRY_RUN em `/api/v1/operations`. O [runtime operacional](docs/32-operational-runtime.md) acrescenta `/api/v1/jobs`, ledger SQLite, plano selado por hash, canary/promoção, pausa/cancelamento, reconciliação de efeitos incertos, relatórios CSV/XLSX e workflows concretos de DynamoDB, SQS, SNS, Lambda, S3 e HTTP. O laboratório Docker usa Moto e dados sintéticos em loopback; essa integração local não constitui homologação para AWS real ou produção.
 
 ## Baseline
 
@@ -14,11 +14,11 @@ Arquitetura pesquisada, plano de implementação e código-base Java para opera�
 | Maven | Wrapper 3.9.12 |
 | Concorrência | MVC + virtual threads, admissão e limites explícitos |
 | HTTP externo | HTTP Service Interface + RestClient/JDK HTTP |
-| Persistência atual | JSON e chunks CSV locais; sem ledger produtivo de escrita |
+| Persistência | Foundation em JSON/chunks CSV; runtime operacional em SQLite WAL/FULL |
 
 Versões são o recorte documentado da pesquisa de **2026-09-18**, não atualizações automáticas. Uma baseline corporativa homologada prevalece. A [pesquisa](docs/00-research.md) compara alternativas e traz fontes oficiais; o [blueprint](docs/26-implementation-blueprint.md) separa implementado, exemplo e planejado.
 
-## Executar a demonstração
+## Executar a foundation sintética
 
 No PowerShell, dentro do projeto, com JDK 25 configurado em `JAVA_HOME`:
 
@@ -51,7 +51,30 @@ Para exercitar a demonstração com token e diretório isolados, depois do build
 .\scripts\smoke.ps1
 ```
 
-Validação registrada em **2026-09-20**: build com 14 testes aprovado, análise SpotBugs sem findings High e smoke local incluindo interrupção e retomada aprovado. Evidências e limites ficam no [checklist final](docs/30-final-validation.md). O smoke usa somente dados sintéticos; integração AWS/HTTP DEV/HML e operação produtiva não foram executadas.
+Evidências executadas, contagens e limites ficam no [checklist final](docs/30-final-validation.md). O smoke usa somente dados sintéticos; ele não autoriza operação em AWS real.
+
+## Executar o laboratório Docker
+
+Com Docker Compose e JDK 25 em `JAVA_HOME`, o script inicia Moto e a API HTTP sintética, aguarda saúde e provisiona os fixtures:
+
+```powershell
+.\scripts\lab.ps1 -Action up
+```
+
+Gere um bearer token como no exemplo anterior e inicie a aplicação com o profile `lab`:
+
+```powershell
+.\mvnw.cmd spring-boot:run '-Dspring-boot.run.profiles=lab'
+```
+
+Em outra sessão que tenha o mesmo `TOOLKIT_LOCAL_TOKEN`, use `/api/v1/jobs`. O guia do [runtime operacional](docs/32-operational-runtime.md) documenta request, aprovação, promoção do canary, reconciliação, operações e relatórios. Para executar os checks automatizados do laboratório ou encerrar os containers:
+
+```powershell
+.\scripts\lab.ps1 -Action test
+.\scripts\lab.ps1 -Action down
+```
+
+Sem o script, os equivalentes principais são `docker compose up -d --wait`, `docker compose exec -T aws python /lab/bootstrap.py` e `docker compose down`. Credenciais `testing` pertencem exclusivamente ao emulador; nunca substitua o endpoint de loopback por uma URL AWS mantendo essas credenciais ou o profile `lab`.
 
 ## Leitura na ordem das 32 partes solicitadas
 
@@ -88,10 +111,10 @@ Validação registrada em **2026-09-20**: build com 14 testes aprovado, análise
 31. **MVP recomendado:** [MVP, CORE e ADVANCED](docs/20-implementation-roadmap.md#mvp-core-e-advanced).
 32. **Checklist final:** [revisão crítica A–K e validações](docs/30-final-validation.md).
 
-Complementos: [requisitos e critérios de aceite](docs/01-requirements.md), [rastreabilidade do prompt](docs/31-requirement-map.md) e [guia de contribuição](CONTRIBUTING.md).
+Complementos: [runtime operacional e laboratório Docker](docs/32-operational-runtime.md), [requisitos e critérios de aceite](docs/01-requirements.md), [rastreabilidade do prompt](docs/31-requirement-map.md) e [guia de contribuição](CONTRIBUTING.md). O complemento do runtime não altera a ordem das 32 partes exigidas pelo prompt.
 
 ## Evolução e colaboração
 
 Criar branches curtas como `feat/architecture-foundation`, `fix/checkpoint-order` ou `docs/credential-refresh`, commits pequenos em formato Conventional Commits e revisão antes da integração. Exemplos: `docs: document checkpoint recovery` e `feat: add bounded inventory operation`. Não commitar outputs operacionais, `.aws`, tokens, reports, dumps ou configurações locais. Política da organização prevalece sobre nomes ilustrativos; este projeto não inventa workflow interno de aprovação.
 
-Uma operação real precisa passar por integração DEV/HML, preflight de identidade/recurso, limites e recuperação apropriados. A arquitetura de escrita exige ledger transacional, plano aprovado, canary e reconciliação antes de liberação. O mecanismo corporativo de Break Glass, permissões, homologação e retenção permanece marcado como **VALIDAR NO AMBIENTE**.
+Uma operação fora do laboratório precisa passar por integração DEV/HML, preflight de identidade/recurso, limites e recuperação apropriados. Ledger, plano aprovado e canary já existem no runtime, mas precisam ser validados com o serviço e o filesystem autorizados; reconciliadores e política de cada efeito também precisam de aceite. O mecanismo corporativo de Break Glass, permissões, homologação e retenção permanece marcado como **VALIDAR NO AMBIENTE**.
