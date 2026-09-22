@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.*;
 import org.junit.jupiter.api.Test;
@@ -45,7 +46,14 @@ class ConcurrencyBenchmarkTest {
     }
 
     private static Map<String, Object> run(int concurrency) throws Exception {
-        var limiter = new DispatchLimiter(concurrency, 1_000_000);
+        var limiter =
+                new DispatchLimiter(
+                        concurrency,
+                        1_000_000,
+                        20,
+                        5,
+                        Duration.ofSeconds(10),
+                        Duration.ofMillis(100));
         long[] latency = new long[TASKS];
         var runtime = Runtime.getRuntime();
         var threads = java.lang.management.ManagementFactory.getThreadMXBean();

@@ -228,47 +228,21 @@ class PaymentGatewayTest {
 
     private Fixture fixture(Duration timeout) throws Exception {
         var settings =
-                new RuntimeProperties(
-                        true,
+                RuntimeTestFixtures.runtime(
                         false,
                         endpoint,
                         Set.of(endpoint.toString()),
                         Set.of("principal"),
                         1000,
                         1,
-                        10,
-                        86400,
-                        900,
-                        30,
-                        endpoint,
-                        Set.of(endpoint.getHost()),
-                        3000,
-                        (int) timeout.toMillis(),
-                        3,
                         10);
+        var http = RuntimeTestFixtures.http(endpoint, Set.of(endpoint.getHost()), timeout);
         var policy =
                 new ExecutionPolicy(
                         settings,
-                        new ToolkitProperties(
-                                ToolkitProperties.Environment.LOCAL,
-                                directory,
-                                1_048_576,
-                                1,
-                                10,
-                                false,
-                                "local-test-token-not-for-real-use-123",
-                                new ToolkitProperties.Aws(
-                                        false,
-                                        "us-east-1",
-                                        "",
-                                        "123456789012",
-                                        1,
-                                        3000,
-                                        2000,
-                                        25000,
-                                        30000,
-                                        30000,
-                                        35000)),
+                        RuntimeTestFixtures.toolkit(
+                                ToolkitProperties.Environment.LOCAL, directory, false),
+                        RuntimeTestFixtures.aws("123456789012"),
                         fakeSts());
         var journal = new SqliteJournal(directory);
         journal.create("job", "{}", "1", policy.identity(), 1000);
@@ -279,12 +253,12 @@ class PaymentGatewayTest {
                         request,
                         journal,
                         policy,
-                        new DispatchLimiter(1, 1000),
+                        RuntimeTestFixtures.limiter(1, 1000),
                         new AtomicReference<>(),
                         Set.of(endpoint.toString()),
                         json,
                         settings);
-        return new Fixture(journal, context, new PaymentGateway(settings, timeout));
+        return new Fixture(journal, context, new PaymentGateway(http, settings, timeout));
     }
 
     private StsClient fakeSts() {

@@ -25,6 +25,6 @@ try {
         & .\scripts\lab-smoke.ps1
     } else {
         Write-Output 'Laboratory ready: AWS http://127.0.0.1:4566; payments http://127.0.0.1:8091.'
-        Write-Output 'Start the toolkit with profile lab and a randomly generated TOOLKIT_LOCAL_TOKEN.'
+        Write-Output 'Start the toolkit with profile lab and a randomly generated TOOLKIT_CORE_LOCAL_TOKEN.'
     }
 } finally { Pop-Location }

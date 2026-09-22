@@ -8,22 +8,22 @@ public record JobRequest(
         @NotBlank String operation,
         @NotNull JsonNode parameters,
         @NotNull JobMode mode,
-        @Size(max = 80) String incidentId,
-        @Size(max = 80) String changeId,
-        @Size(max = 256) String reason,
+        @Size(max = JobRequestLimits.MAX_REFERENCE_CHARS) String incidentId,
+        @Size(max = JobRequestLimits.MAX_REFERENCE_CHARS) String changeId,
+        @Size(max = JobRequestLimits.MAX_REASON_CHARS) String reason,
         Boolean explicitConfirmation,
-        @Min(1) @Max(10000000) long maxRecords,
-        @Min(1) @Max(10000000) int maxCalls,
-        @Min(1) @Max(86400) int maxSeconds,
-        @Min(1) @Max(1000) int canaryRecords,
-        @Min(0) @Max(10000) int maxConflicts,
-        @Min(0) @Max(10000000) Integer maxErrors,
+        @Min(1) @Max(JobRequestLimits.MAX_RECORDS) long maxRecords,
+        @Min(1) @Max(JobRequestLimits.MAX_CALLS) int maxCalls,
+        @Min(1) @Max(JobRequestLimits.MAX_SECONDS) int maxSeconds,
+        @Min(1) @Max(JobRequestLimits.MAX_CANARY_RECORDS) int canaryRecords,
+        @Min(0) @Max(JobRequestLimits.MAX_CONFLICTS) int maxConflicts,
+        @Min(0) @Max(JobRequestLimits.MAX_ERRORS) Integer maxErrors,
         @DecimalMin("0.0") @DecimalMax("1.0") Double maxErrorRate,
-        @Min(1) @Max(10000000) Integer minErrorSample,
-        @Min(1) @Max(1024) int segments,
+        @Min(1) @Max(JobRequestLimits.MAX_ERROR_SAMPLE) Integer minErrorSample,
+        @Min(1) @Max(JobRequestLimits.MAX_SEGMENTS) int segments,
         Boolean visibilityImpactAccepted,
         Boolean sharedConsumerImpactAccepted,
-        @Min(1) @Max(100000000) Long maxScannedRecords,
+        @Min(1) @Max(JobRequestLimits.MAX_SCANNED_RECORDS) Long maxScannedRecords,
         @DecimalMin("0.5") Double maxReadCapacity) {
     public JobRequest {
         if (mode == null) mode = JobMode.DRY_RUN;
@@ -32,7 +32,7 @@ public record JobRequest(
         sharedConsumerImpactAccepted = Boolean.TRUE.equals(sharedConsumerImpactAccepted);
         if (maxErrors == null) maxErrors = 0;
         if (maxErrorRate == null) maxErrorRate = 0.0;
-        if (minErrorSample == null) minErrorSample = 100;
+        if (minErrorSample == null) minErrorSample = JobRequestLimits.DEFAULT_MIN_ERROR_SAMPLE;
         if (maxScannedRecords == null) maxScannedRecords = maxRecords;
         if (maxReadCapacity == null) maxReadCapacity = (double) maxRecords;
         if (!Double.isFinite(maxReadCapacity) || !Double.isFinite(maxErrorRate)) {

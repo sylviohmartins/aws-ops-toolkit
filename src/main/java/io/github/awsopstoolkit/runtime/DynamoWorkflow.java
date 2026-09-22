@@ -8,6 +8,8 @@ import tools.jackson.databind.JsonNode;
 
 /** Paginated inventory and payment-rule source. Only projected fields enter the local plan. */
 public class DynamoWorkflow implements Workflow {
+    private static final int MAX_PARAMETER_TEXT_CHARS = 2_048;
+
     protected final DynamoDbClient dynamo;
 
     public DynamoWorkflow(DynamoDbClient dynamo) {
@@ -147,7 +149,9 @@ public class DynamoWorkflow implements Workflow {
 
     public static String required(JsonNode node, String key) {
         var value = node.path(key);
-        if (!value.isTextual() || value.asText().isBlank() || value.asText().length() > 2048)
+        if (!value.isTextual()
+                || value.asText().isBlank()
+                || value.asText().length() > MAX_PARAMETER_TEXT_CHARS)
             throw new IllegalArgumentException("Missing/invalid " + key);
         return value.asText();
     }

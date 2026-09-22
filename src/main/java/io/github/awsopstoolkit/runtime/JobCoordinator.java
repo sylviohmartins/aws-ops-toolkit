@@ -1,5 +1,6 @@
 package io.github.awsopstoolkit.runtime;
 
+import io.github.awsopstoolkit.security.Masking;
 import jakarta.annotation.PreDestroy;
 import jakarta.validation.Validator;
 import java.sql.SQLException;
@@ -9,6 +10,12 @@ import java.util.concurrent.atomic.*;
 import tools.jackson.databind.ObjectMapper;
 
 public final class JobCoordinator {
+    private static final int MIN_APPROVAL_REASON_CHARS = 8;
+    private static final int MIN_RECONCILIATION_EVIDENCE_CHARS = 12;
+    private static final int MAX_RECONCILIATION_EVIDENCE_CHARS = 512;
+    private static final int MAX_RECOVERED_RESULT_CHARS = 1_500_000;
+    private static final int MAX_UPLOAD_ID_CHARS = 2_048;
+
     private final SqliteJournal journal;
     private final RuntimeProperties settings;
     private final ExecutionPolicy policy;
@@ -36,7 +43,14 @@ public final class JobCoordinator {
         for (var workflow : workflows)
             if (this.workflows.put(workflow.type(), workflow) != null)
                 throw new IllegalArgumentException("Duplicate rule");
-        limiter = new DispatchLimiter(settings.workers(), settings.requestsPerSecond());
+        limiter =
+                new DispatchLimiter(
+                        settings.workers(),
+                        settings.requestsPerSecond(),
+                        settings.healthyResponsesBeforeIncrease(),
+                        settings.circuitFailuresBeforeOpen(),
+                        settings.circuitOpenDuration(),
+                        settings.retryBaseBackoff());
     }
 
     public synchronized SqliteJournal.Job create(JobRequest request) throws Exception {
@@ -65,6 +79,33 @@ public final class JobCoordinator {
                         + ";resources="
                         + String.join(",", workflow.resources(request.parameters()));
         journal.audit(id, "REQUEST_CONTEXT", contextAudit);
+        journal.audit(
+                id,
+                "CONFIG_SNAPSHOT",
+                "workers="
+                        + settings.workers()
+                        + ";pageSize="
+                        + settings.pageSize()
+                        + ";requestsPerSecond="
+                        + settings.requestsPerSecond()
+                        + ";planLifetime="
+                        + settings.planLifetime()
+                        + ";approvalLifetime="
+                        + settings.approvalLifetime()
+                        + ";healthyResponsesBeforeIncrease="
+                        + settings.healthyResponsesBeforeIncrease()
+                        + ";circuitFailuresBeforeOpen="
+                        + settings.circuitFailuresBeforeOpen()
+                        + ";circuitOpenDuration="
+                        + settings.circuitOpenDuration()
+                        + ";retryBaseBackoff="
+                        + settings.retryBaseBackoff()
+                        + ";readMaxAttempts="
+                        + settings.readMaxAttempts()
+                        + ";environment="
+                        + policy.environment()
+                        + ";region="
+                        + policy.region());
         schedule(id, true);
         return journal.job(id);
     }
@@ -99,7 +140,7 @@ public final class JobCoordinator {
         view.put("adaptiveConcurrency", limiter.currentConcurrency());
         view.put("concurrencyCeiling", limiter.currentConcurrencyCeiling());
         view.put("planned", job.planned());
-        view.put("identity", mask(job.identity()));
+        view.put("identity", Masking.stableIdentifier(job.identity()));
         view.put("resources", rule.resources(request.parameters()));
         var parameterNames = new TreeSet<String>();
         request.parameters().propertyNames().forEach(parameterNames::add);
@@ -129,7 +170,7 @@ public final class JobCoordinator {
             result.add(
                     Map.of(
                             "sequence", sequence,
-                            "record", mask(key),
+                            "record", Masking.stableIdentifier(key),
                             "action", proposal.action(),
                             "before", proposal.before(),
                             "after", proposal.after(),
@@ -178,11 +219,11 @@ public final class JobCoordinator {
         long located = Math.max(scanned, candidates);
         long ignored = Math.max(0, located - candidates);
         var samples = new ArrayList<Map<String, Object>>();
-        for (var task : journal.pending(id, 10)) {
+        for (var task : journal.pending(id, settings.dryRunSampleSize())) {
             var proposal = rule.proposal(request.parameters(), task);
             samples.add(
                     Map.of(
-                            "record", mask(task.key()),
+                            "record", Masking.stableIdentifier(task.key()),
                             "action", proposal.action(),
                             "before", proposal.before(),
                             "after", proposal.after()));
@@ -211,14 +252,6 @@ public final class JobCoordinator {
         return Map.copyOf(result);
     }
 
-    private static String mask(String value) {
-        return HexFormat.of()
-                .formatHex(
-                        SqliteJournal.sha256()
-                                .digest(value.getBytes(java.nio.charset.StandardCharsets.UTF_8)))
-                .substring(0, 16);
-    }
-
     public synchronized SqliteJournal.Job approve(
             String id, String hash, String reason, boolean promote) throws Exception {
         capacity();
@@ -229,12 +262,12 @@ public final class JobCoordinator {
                 || !job.hash().equals(hash)
                 || hash.isBlank()
                 || reason == null
-                || reason.length() < 8
-                || reason.length() > 256
+                || reason.length() < MIN_APPROVAL_REASON_CHARS
+                || reason.length() > JobRequestLimits.MAX_REASON_CHARS
                 || reason.chars().anyMatch(Character::isISOControl))
             throw new IllegalArgumentException(
                     "Approval must bind the current plan and change reason");
-        if (job.created() + settings.planLifetimeSeconds() < SqliteJournal.now())
+        if (job.created() + settings.planLifetime().toSeconds() < SqliteJournal.now())
             throw new IllegalStateException("Plan expired; generate a new plan");
         if (promote && job.state() != JobState.CANARY_COMPLETE && !job.promoted())
             throw new IllegalStateException("A successful canary is required");
@@ -247,7 +280,7 @@ public final class JobCoordinator {
         policy.preflight(journal, request, rule.resources(request.parameters()));
         journal.approve(
                 id,
-                SqliteJournal.now() + settings.approvalLifetimeSeconds(),
+                SqliteJournal.now() + settings.approvalLifetime().toSeconds(),
                 reason,
                 promote || job.promoted());
         schedule(id, false);
@@ -324,8 +357,8 @@ public final class JobCoordinator {
                                 JobState.INTERRUPTED)
                         .contains(job.state())
                 || evidence == null
-                || evidence.length() < 12
-                || evidence.length() > 512)
+                || evidence.length() < MIN_RECONCILIATION_EVIDENCE_CHARS
+                || evidence.length() > MAX_RECONCILIATION_EVIDENCE_CHARS)
             throw new IllegalStateException("Reconciliation requires a stopped job and evidence");
         var effect = journal.effect(id, task, step);
         if (effect == null || !Set.of("UNKNOWN", "INTENT").contains(effect.state()))
@@ -341,7 +374,7 @@ public final class JobCoordinator {
     }
 
     private void validateRecoveredResult(String step, String result) {
-        if (result == null || result.isBlank() || result.length() > 1_500_000)
+        if (result == null || result.isBlank() || result.length() > MAX_RECOVERED_RESULT_CHARS)
             throw new IllegalArgumentException("Actual recovered result is required");
         if (step.equals("receive") || step.startsWith("receive-refresh/")) {
             var envelope = json.readTree(result);
@@ -358,7 +391,8 @@ public final class JobCoordinator {
                         || envelope.path("leaseUntil").asLong() < 0)
                     throw new IllegalArgumentException("Invalid recovered lease");
             }
-        } else if (step.equals("multipart-create") && !result.matches("[A-Za-z0-9+/=_-]{1,2048}"))
+        } else if (step.equals("multipart-create")
+                && !result.matches("[A-Za-z0-9+/=_-]{1," + MAX_UPLOAD_ID_CHARS + "}"))
             throw new IllegalArgumentException("Actual upload ID is required");
         else if (step.equals("lambda-validation")
                 && !Set.of("ACCEPTED", "FUNCTION_ERROR", "BUSINESS_REJECTED").contains(result))
@@ -556,7 +590,9 @@ public final class JobCoordinator {
             active.values().forEach(s -> s.compareAndSet(null, JobState.INTERRUPTED));
         }
         executor.shutdown();
-        if (!executor.awaitTermination(25, TimeUnit.SECONDS)) executor.shutdownNow();
+        if (!executor.awaitTermination(
+                settings.shutdownTimeout().toMillis(), TimeUnit.MILLISECONDS))
+            executor.shutdownNow();
     }
 
     @FunctionalInterface

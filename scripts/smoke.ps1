@@ -7,13 +7,13 @@ if (!$env:JAVA_HOME) { throw 'Set JAVA_HOME to a JDK 25 installation.' }
 $java = Join-Path $env:JAVA_HOME 'bin/java.exe'
 $runDirectory = Join-Path $projectRoot ('target/smoke/' + [guid]::NewGuid().ToString())
 New-Item -ItemType Directory -Path $runDirectory -Force | Out-Null
-$oldToken = $env:TOOLKIT_LOCAL_TOKEN
+$oldToken = $env:TOOLKIT_CORE_LOCAL_TOKEN
 $bytes = New-Object byte[] 32
 $rng = [Security.Cryptography.RandomNumberGenerator]::Create()
 $rng.GetBytes($bytes)
 $rng.Dispose()
-$env:TOOLKIT_LOCAL_TOKEN = [Convert]::ToBase64String($bytes)
-$headers = @{Authorization = 'Bearer ' + $env:TOOLKIT_LOCAL_TOKEN}
+$env:TOOLKIT_CORE_LOCAL_TOKEN = [Convert]::ToBase64String($bytes)
+$headers = @{Authorization = 'Bearer ' + $env:TOOLKIT_CORE_LOCAL_TOKEN}
 $base = "http://127.0.0.1:$Port"
 $script:process = $null
 $script:launchNumber = 0
@@ -21,8 +21,8 @@ $script:launchNumber = 0
 function Start-Toolkit {
     $script:launchNumber++
     $arguments = @('-jar', ('"' + $jar + '"'), "--server.port=$Port",
-        ('"--toolkit.data-directory=' + (Join-Path $runDirectory 'data') + '"'),
-        '--toolkit.minimum-free-bytes=1048576', '--toolkit.max-concurrent-operations=1')
+        ('"--toolkit.core.data-directory=' + (Join-Path $runDirectory 'data') + '"'),
+        '--toolkit.core.minimum-free-space=1MB', '--toolkit.core.max-concurrent-operations=1')
     $script:process = Start-Process -FilePath $java -ArgumentList $arguments -PassThru -WindowStyle Hidden -WorkingDirectory $runDirectory `
         -RedirectStandardOutput (Join-Path $runDirectory "stdout-$script:launchNumber.log") `
         -RedirectStandardError (Join-Path $runDirectory "stderr-$script:launchNumber.log")
@@ -102,5 +102,5 @@ try {
         Stop-Process -Id $script:process.Id -Force
         $script:process.WaitForExit()
     }
-    $env:TOOLKIT_LOCAL_TOKEN = $oldToken
+    $env:TOOLKIT_CORE_LOCAL_TOKEN = $oldToken
 }

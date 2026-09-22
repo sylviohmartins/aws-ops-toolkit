@@ -1,6 +1,9 @@
 package io.github.awsopstoolkit.runtime;
 
-import io.github.awsopstoolkit.report.Csv;
+import io.github.awsopstoolkit.configuration.ReportProperties;
+import io.github.awsopstoolkit.configuration.ToolkitProperties;
+import io.github.awsopstoolkit.report.*;
+import io.github.awsopstoolkit.security.Masking;
 import jakarta.validation.Valid;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
@@ -13,31 +16,28 @@ import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBo
 
 @RestController
 @RequestMapping("/api/v1/jobs")
-@ConditionalOnProperty(name = "operations.enabled", havingValue = "true")
+@ConditionalOnProperty(name = "toolkit.operations.enabled", havingValue = "true")
 public final class JobController {
     private final JobCoordinator coordinator;
     private final SqliteJournal journal;
-    private final java.util.concurrent.Semaphore reportSlots =
-            new java.util.concurrent.Semaphore(1);
+    private final ReportProperties reportProperties;
+    private final CsvReportWriterFactory csvWriters;
+    private final java.util.concurrent.Semaphore reportSlots;
     private final long minimumFreeBytes;
 
-    public JobController(JobCoordinator coordinator, SqliteJournal journal) {
-        this(coordinator, journal, 1048576L);
-    }
-
-    @org.springframework.beans.factory.annotation.Autowired
     public JobController(
             JobCoordinator coordinator,
             SqliteJournal journal,
-            io.github.awsopstoolkit.configuration.ToolkitProperties properties) {
-        this(coordinator, journal, properties.minimumFreeBytes());
-    }
-
-    private JobController(
-            JobCoordinator coordinator, SqliteJournal journal, long minimumFreeBytes) {
+            ToolkitProperties toolkit,
+            ReportProperties reportProperties,
+            CsvReportWriterFactory csvWriters) {
         this.coordinator = coordinator;
         this.journal = journal;
-        this.minimumFreeBytes = minimumFreeBytes;
+        this.reportProperties = reportProperties;
+        this.csvWriters = csvWriters;
+        this.reportSlots =
+                new java.util.concurrent.Semaphore(reportProperties.maxConcurrentReports(), true);
+        this.minimumFreeBytes = toolkit.minimumFreeBytes();
     }
 
     @GetMapping("/types")
@@ -144,7 +144,7 @@ public final class JobController {
                 "reportSource",
                 "durable-task-outcomes",
                 "availableReportColumns",
-                List.of("sequence", "record", "state", "outcome"),
+                OperationReportSchema.names(),
                 "compressedCsv",
                 true);
     }
@@ -155,7 +155,7 @@ public final class JobController {
             @RequestParam(defaultValue = "sequence,record,state,outcome") String columns)
             throws Exception {
         coordinator.status(id.toString());
-        var selected = reportColumns(columns);
+        var selected = OperationReportSchema.select(columns);
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType("text/csv;charset=UTF-8"))
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + id + ".csv\"")
@@ -174,7 +174,7 @@ public final class JobController {
             @RequestParam(defaultValue = "sequence,record,state,outcome") String columns)
             throws Exception {
         coordinator.status(id.toString());
-        var selected = reportColumns(columns);
+        var selected = OperationReportSchema.select(columns);
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType("application/gzip"))
                 .header(
@@ -200,11 +200,14 @@ public final class JobController {
             @RequestParam(defaultValue = "sequence,record,state,outcome") String columns)
             throws Exception {
         coordinator.status(id.toString());
-        var selected = reportColumns(columns);
+        var selected = OperationReportSchema.select(columns);
         long records = journal.count(id.toString(), null);
-        if (records > 1_000_000)
+        if (records > reportProperties.xlsxMaxDataRows())
             throw new IllegalArgumentException("Use streaming CSV above one million rows");
-        checkReportDisk(Math.addExact(minimumFreeBytes, Math.multiplyExact(records, 1024L)));
+        checkReportDisk(
+                Math.addExact(
+                        minimumFreeBytes,
+                        Math.multiplyExact(records, reportProperties.xlsxEstimatedBytesPerRow())));
         return ResponseEntity.ok()
                 .contentType(
                         MediaType.parseMediaType(
@@ -214,17 +217,19 @@ public final class JobController {
                         out -> {
                             if (!reportSlots.tryAcquire())
                                 throw new IOException("Another XLSX projection is active");
-                            try (var workbook = new SXSSFWorkbook(100)) {
+                            try (var workbook =
+                                    new SXSSFWorkbook(reportProperties.xlsxRowWindow())) {
                                 workbook.setCompressTempFiles(true);
                                 var sheet = workbook.createSheet("Results");
                                 var header = sheet.createRow(0);
                                 for (int i = 0; i < selected.size(); i++)
-                                    header.createCell(i).setCellValue(selected.get(i));
+                                    header.createCell(i).setCellValue(selected.get(i).header());
                                 var index = new java.util.concurrent.atomic.AtomicInteger(1);
                                 journal.report(
                                         id.toString(),
                                         result -> {
-                                            if (index.get() % 500 == 0)
+                                            if (index.get() % reportProperties.flushEveryRecords()
+                                                    == 0)
                                                 try {
                                                     checkReportDisk(minimumFreeBytes);
                                                 } catch (IOException e) {
@@ -247,52 +252,39 @@ public final class JobController {
                         });
     }
 
-    private void writeCsv(String id, BufferedWriter writer, List<String> columns)
+    private void writeCsv(
+            String id, BufferedWriter writer, List<CsvColumn<OperationReportRow>> columns)
             throws IOException {
-        writer.write(String.join(",", columns));
-        writer.write("\n");
+        var csv = csvWriters.create(columns);
+        var session = csv.open(writer, true);
         try {
             journal.report(
                     id,
                     row -> {
                         try {
-                            for (int i = 0; i < columns.size(); i++) {
-                                if (i > 0) writer.write(",");
-                                writer.write(Csv.cell(reportValue(row, columns.get(i))));
-                            }
-                            writer.write("\n");
+                            session.write(toReportRow(row));
                         } catch (IOException e) {
                             throw new UncheckedIOException(e);
                         }
                     });
-            writer.flush();
+            session.finish();
         } catch (java.sql.SQLException e) {
             throw new IOException("Report unavailable", e);
         }
     }
 
     static List<String> reportColumns(String raw) {
-        var allowed = Set.of("sequence", "record", "state", "outcome");
-        var selected = new ArrayList<String>();
-        for (String token : raw.split(",")) {
-            String column = token.strip();
-            if (!allowed.contains(column) || selected.contains(column))
-                throw new IllegalArgumentException("Invalid or duplicate report column");
-            selected.add(column);
-        }
-        if (selected.isEmpty())
-            throw new IllegalArgumentException("At least one report column is required");
-        return List.copyOf(selected);
+        return OperationReportSchema.select(raw).stream().map(CsvColumn::header).toList();
     }
 
-    private static String reportValue(SqliteJournal.ReportRow row, String column) {
-        return switch (column) {
-            case "sequence" -> Long.toString(row.sequence());
-            case "record" -> mask(row.key());
-            case "state" -> row.state();
-            case "outcome" -> row.outcome();
-            default -> throw new IllegalArgumentException("Unknown report column");
-        };
+    private static String reportValue(
+            SqliteJournal.ReportRow row, CsvColumn<OperationReportRow> column) {
+        Object value = column.value(toReportRow(row));
+        return value == null ? "" : String.valueOf(value);
+    }
+
+    private static OperationReportRow toReportRow(SqliteJournal.ReportRow row) {
+        return new OperationReportRow(row.sequence(), mask(row.key()), row.state(), row.outcome());
     }
 
     private static void checkReportDisk(long required) throws IOException {
@@ -302,9 +294,7 @@ public final class JobController {
     }
 
     static String mask(String key) {
-        return HexFormat.of()
-                .formatHex(SqliteJournal.sha256().digest(key.getBytes(StandardCharsets.UTF_8)))
-                .substring(0, 16);
+        return Masking.stableIdentifier(key);
     }
 
     public record Approval(String hash, String reason, boolean promote) {}

@@ -13,8 +13,6 @@ public final class RuntimeMaintenance {
 
     @Scheduled(fixedDelayString = "PT24H", initialDelayString = "PT1M")
     public void expire() throws java.sql.SQLException {
-        journal.expirePayloads(
-                SqliteJournal.now()
-                        - java.time.Duration.ofDays(properties.retentionDays()).toSeconds());
+        journal.expirePayloads(SqliteJournal.now() - properties.retention().toSeconds());
     }
 }

@@ -3,7 +3,9 @@ package io.github.awsopstoolkit.operation;
 import static org.junit.jupiter.api.Assertions.*;
 
 import io.github.awsopstoolkit.checkpoint.FileCheckpointStore;
+import io.github.awsopstoolkit.configuration.ReportProperties;
 import io.github.awsopstoolkit.configuration.ToolkitProperties;
+import io.github.awsopstoolkit.report.CsvReportWriterFactory;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import jakarta.validation.Validation;
 import java.io.ByteArrayOutputStream;
@@ -13,6 +15,7 @@ import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.springframework.util.unit.DataSize;
 import tools.jackson.databind.json.JsonMapper;
 
 class OperationSafetyTest {
@@ -24,13 +27,11 @@ class OperationSafetyTest {
         return new ToolkitProperties(
                 environment,
                 directory,
-                1048576,
+                DataSize.ofMegabytes(1),
                 1,
                 10,
                 writes,
-                "test-only-local-token-not-for-deployment",
-                new ToolkitProperties.Aws(
-                        false, "us-east-1", "", "", 2, 3000, 2000, 25000, 30000, 30000, 35000));
+                "test-only-local-token-not-for-deployment");
     }
 
     @Test
@@ -85,7 +86,7 @@ class OperationSafetyTest {
                             null));
             var executor =
                     new OperationExecutor(
-                            new OperationRegistry(List.of(new SyntheticInventoryOperation())),
+                            new OperationRegistry(List.of(syntheticOperation())),
                             store,
                             new PreflightCheckService(properties, store),
                             properties,
@@ -132,7 +133,7 @@ class OperationSafetyTest {
             var meters = new SimpleMeterRegistry();
             var executor =
                     new OperationExecutor(
-                            new OperationRegistry(List.of(new SyntheticInventoryOperation())),
+                            new OperationRegistry(List.of(syntheticOperation())),
                             store,
                             new PreflightCheckService(properties, store),
                             properties,
@@ -164,6 +165,11 @@ class OperationSafetyTest {
         }
     }
 
+    private SyntheticInventoryOperation syntheticOperation() {
+        var reports = new ReportProperties(",", 500, 1, 100, 1_000_000, 1024, true);
+        return new SyntheticInventoryOperation(new CsvReportWriterFactory(reports));
+    }
+
     private OperationSnapshot awaitTerminal(OperationExecutor executor, UUID id) throws Exception {
         long deadline = System.nanoTime() + java.time.Duration.ofSeconds(5).toNanos();
         OperationSnapshot snapshot;
@@ -184,7 +190,7 @@ class OperationSafetyTest {
             var meters = new SimpleMeterRegistry();
             var executor =
                     new OperationExecutor(
-                            new OperationRegistry(List.of(new SyntheticInventoryOperation())),
+                            new OperationRegistry(List.of(syntheticOperation())),
                             store,
                             new PreflightCheckService(properties, store),
                             properties,
@@ -281,18 +287,17 @@ class OperationSafetyTest {
                 new ToolkitProperties(
                         base.environment(),
                         directory,
-                        base.minimumFreeBytes(),
+                        base.minimumFreeSpace(),
                         2,
                         10,
                         false,
-                        base.localToken(),
-                        base.aws());
+                        base.localToken());
         try (var store = new FileCheckpointStore(properties, mapper);
                 var validation = Validation.buildDefaultValidatorFactory()) {
             var meters = new SimpleMeterRegistry();
             var executor =
                     new OperationExecutor(
-                            new OperationRegistry(List.of(new SyntheticInventoryOperation())),
+                            new OperationRegistry(List.of(syntheticOperation())),
                             store,
                             new PreflightCheckService(properties, store),
                             properties,

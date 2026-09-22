@@ -17,24 +17,8 @@ class ExecutionRecoveryTest {
     @TempDir Path directory;
     final JsonMapper json = JsonMapper.builder().build();
     final RuntimeProperties settings =
-            new RuntimeProperties(
-                    true,
-                    true,
-                    null,
-                    Set.of("table"),
-                    Set.of("principal"),
-                    1000,
-                    2,
-                    10,
-                    86400,
-                    900,
-                    30,
-                    null,
-                    Set.of(),
-                    3000,
-                    10000,
-                    3,
-                    10);
+            RuntimeTestFixtures.runtime(
+                    true, null, Set.of("table"), Set.of("principal"), 1000, 2, 10);
     final AtomicBoolean validIdentity = new AtomicBoolean(true);
     final AtomicInteger identityCalls = new AtomicInteger();
 
@@ -59,26 +43,8 @@ class ExecutionRecoveryTest {
                                 });
         return new ExecutionPolicy(
                 settings,
-                new ToolkitProperties(
-                        ToolkitProperties.Environment.LOCAL,
-                        directory,
-                        1048576,
-                        1,
-                        10,
-                        false,
-                        "local-test-token-not-for-real-use-123",
-                        new ToolkitProperties.Aws(
-                                false,
-                                "us-east-1",
-                                "",
-                                "123456789012",
-                                2,
-                                3000,
-                                2000,
-                                25000,
-                                30000,
-                                30000,
-                                35000)),
+                RuntimeTestFixtures.toolkit(ToolkitProperties.Environment.LOCAL, directory, false),
+                RuntimeTestFixtures.aws("123456789012"),
                 sts);
     }
 
@@ -105,7 +71,7 @@ class ExecutionRecoveryTest {
                         false),
                 journal,
                 policy,
-                new DispatchLimiter(2, 1000),
+                RuntimeTestFixtures.limiter(2, 1000),
                 stop,
                 Set.of("table"),
                 json,
@@ -263,47 +229,14 @@ class ExecutionRecoveryTest {
                                             .build();
                                 });
         var runtime =
-                new RuntimeProperties(
-                        true,
-                        false,
-                        null,
-                        Set.of("table"),
-                        Set.of(stableRole),
-                        1000,
-                        2,
-                        10,
-                        86400,
-                        900,
-                        30,
-                        null,
-                        Set.of(),
-                        3000,
-                        10000,
-                        3,
-                        10);
+                RuntimeTestFixtures.runtime(
+                        false, null, Set.of("table"), Set.of(stableRole), 1000, 2, 10);
         var policy =
                 new ExecutionPolicy(
                         runtime,
-                        new ToolkitProperties(
-                                ToolkitProperties.Environment.LOCAL,
-                                directory,
-                                1048576,
-                                1,
-                                10,
-                                false,
-                                "local-test-token-not-for-real-use-123",
-                                new ToolkitProperties.Aws(
-                                        false,
-                                        "us-east-1",
-                                        "",
-                                        "123456789012",
-                                        2,
-                                        3000,
-                                        2000,
-                                        25000,
-                                        30000,
-                                        30000,
-                                        35000)),
+                        RuntimeTestFixtures.toolkit(
+                                ToolkitProperties.Environment.LOCAL, directory, false),
+                        RuntimeTestFixtures.aws("123456789012"),
                         sts);
         try (var journal = new SqliteJournal(directory)) {
             journal.create("job", "{}", "1", policy.identity(), 1000);
@@ -315,7 +248,7 @@ class ExecutionRecoveryTest {
                             request,
                             journal,
                             policy,
-                            new DispatchLimiter(2, 1000),
+                            RuntimeTestFixtures.limiter(2, 1000),
                             new AtomicReference<>(),
                             Set.of("table"),
                             json,
@@ -366,7 +299,7 @@ class ExecutionRecoveryTest {
                                     "test", json.readTree("{}"), 10, 1, 60, 1, 0, 1, false, false),
                             journal,
                             policy,
-                            new DispatchLimiter(2, 1000),
+                            RuntimeTestFixtures.limiter(2, 1000),
                             new AtomicReference<>(),
                             Set.of("table"),
                             json,
@@ -415,7 +348,7 @@ class ExecutionRecoveryTest {
                             request,
                             journal,
                             policy,
-                            new DispatchLimiter(2, 1000),
+                            RuntimeTestFixtures.limiter(2, 1000),
                             new AtomicReference<>(),
                             Set.of("table"),
                             json,

@@ -1,5 +1,8 @@
 package io.github.awsopstoolkit.runtime;
 
+import io.github.awsopstoolkit.aws.S3Limits;
+import io.github.awsopstoolkit.configuration.SqsProperties;
+import io.github.awsopstoolkit.security.Hashing;
 import java.io.*;
 import java.util.*;
 import software.amazon.awssdk.core.SdkBytes;
@@ -13,8 +16,14 @@ import tools.jackson.databind.JsonNode;
 
 /** Reviewable single-command plans for explicit messaging and object operations. */
 public final class ServiceWorkflow implements Workflow {
-    private static final int VISIBILITY_SECONDS = 120;
     private static final String REFRESH_PREFIX = "receive-refresh/";
+    private static final int MAX_COMMAND_MESSAGES = 1_000;
+    private static final int DEFAULT_POISON_RECEIVE_COUNT = 5;
+    private static final int MAX_POISON_RECEIVE_COUNT = 1_000;
+    private static final int MAX_INLINE_PAYLOAD_CHARS = 65_536;
+    private static final int RECEIPT_REACQUIRE_ATTEMPTS = 3;
+    private static final int ACK_LEASE_RESERVE_SECONDS = 5;
+    private static final int REUSE_LEASE_RESERVE_SECONDS = 40;
 
     public enum Kind {
         SQS_INSPECT,
@@ -33,6 +42,7 @@ public final class ServiceWorkflow implements Workflow {
     private final LambdaClient lambda;
     private final S3Client s3;
     private final software.amazon.awssdk.services.dynamodb.DynamoDbClient dynamo;
+    private final int visibilityTimeoutSeconds;
 
     public ServiceWorkflow(
             Kind kind,
@@ -40,13 +50,15 @@ public final class ServiceWorkflow implements Workflow {
             SnsClient sns,
             LambdaClient lambda,
             S3Client s3,
-            software.amazon.awssdk.services.dynamodb.DynamoDbClient dynamo) {
+            software.amazon.awssdk.services.dynamodb.DynamoDbClient dynamo,
+            SqsProperties sqsProperties) {
         this.kind = kind;
         this.sqs = sqs;
         this.sns = sns;
         this.lambda = lambda;
         this.s3 = s3;
         this.dynamo = dynamo;
+        this.visibilityTimeoutSeconds = sqsProperties.visibilityTimeoutSeconds();
     }
 
     @Override
@@ -89,14 +101,18 @@ public final class ServiceWorkflow implements Workflow {
                             || !request.sharedConsumerImpactAccepted()))
                 throw new IllegalArgumentException(
                         "Explicit receive and consumer impact consent required for EXECUTE");
-            if (p.path("messages").asInt(0) < 1 || p.path("messages").asInt() > 1000)
-                throw new IllegalArgumentException("messages must be 1..1000");
-            int poisonReceiveCount = p.path("poisonReceiveCount").asInt(5);
-            if (poisonReceiveCount < 1 || poisonReceiveCount > 1000)
-                throw new IllegalArgumentException("poisonReceiveCount must be 1..1000");
+            if (p.path("messages").asInt(0) < 1
+                    || p.path("messages").asInt() > MAX_COMMAND_MESSAGES)
+                throw new IllegalArgumentException("messages must be 1.." + MAX_COMMAND_MESSAGES);
+            int poisonReceiveCount =
+                    p.path("poisonReceiveCount").asInt(DEFAULT_POISON_RECEIVE_COUNT);
+            if (poisonReceiveCount < 1 || poisonReceiveCount > MAX_POISON_RECEIVE_COUNT)
+                throw new IllegalArgumentException(
+                        "poisonReceiveCount must be 1.." + MAX_POISON_RECEIVE_COUNT);
         }
         if (kind == Kind.SNS_PUBLISH || kind == Kind.LAMBDA_INVOKE) {
-            if (!p.has("payload") || p.path("payload").toString().length() > 65536)
+            if (!p.has("payload")
+                    || p.path("payload").toString().length() > MAX_INLINE_PAYLOAD_CHARS)
                 throw new IllegalArgumentException("A bounded payload is required");
         }
         if (kind == Kind.LAMBDA_INVOKE) {
@@ -112,7 +128,7 @@ public final class ServiceWorkflow implements Workflow {
                 throw new IllegalArgumentException("An immutable version is required");
             if (kind == Kind.S3_COPY) DynamoWorkflow.required(p, "destinationKey");
             if (p.path("maxBytes").asLong(0) < 1
-                    || p.path("maxBytes").asLong() > 5L * 1024 * 1024 * 1024 * 1024)
+                    || p.path("maxBytes").asLong() > S3Limits.MAX_OBJECT_BYTES)
                 throw new IllegalArgumentException("Explicit object byte budget required");
         }
         if (kind == Kind.S3_ABORT_MULTIPART) {
@@ -447,17 +463,7 @@ public final class ServiceWorkflow implements Workflow {
             var body = c.json.readTree(message.path("body").asText());
             String eventId = DynamoWorkflow.required(body, "eventId");
             String table = p.path("table").asText();
-            String digest =
-                    java.util.HexFormat.of()
-                            .formatHex(
-                                    SqliteJournal.sha256()
-                                            .digest(
-                                                    message.path("body")
-                                                            .asText()
-                                                            .getBytes(
-                                                                    java.nio.charset
-                                                                            .StandardCharsets
-                                                                            .UTF_8)));
+            String digest = Hashing.sha256Hex(message.path("body").asText());
             var values =
                     Map.of(
                             "id",
@@ -554,7 +560,8 @@ public final class ServiceWorkflow implements Workflow {
                 queue,
                 () -> {
                     // Authorization and rate waiting happen before this supplier runs.
-                    if (!leaseValid(current, 5)) throw new EffectNotDispatched(JobState.PAUSED);
+                    if (!leaseValid(current, ACK_LEASE_RESERVE_SECONDS))
+                        throw new EffectNotDispatched(JobState.PAUSED);
                     sqs.deleteMessage(
                             b -> b.queueUrl(queue).receiptHandle(current.path("receipt").asText()));
                     return "ACKNOWLEDGED";
@@ -579,7 +586,8 @@ public final class ServiceWorkflow implements Workflow {
                                                     b.queueUrl(queue)
                                                             .maxNumberOfMessages(1)
                                                             .waitTimeSeconds(1)
-                                                            .visibilityTimeout(VISIBILITY_SECONDS)
+                                                            .visibilityTimeout(
+                                                                    visibilityTimeoutSeconds)
                                                             .messageAttributeNames("All")
                                                             .messageSystemAttributeNames(
                                                                     software.amazon.awssdk.services
@@ -592,7 +600,7 @@ public final class ServiceWorkflow implements Workflow {
                                             response.messages().getFirst(),
                                             c.json,
                                             receivedAt,
-                                            VISIBILITY_SECONDS);
+                                            visibilityTimeoutSeconds);
                         },
                         Optional::empty);
         return c.json.readTree(result);
@@ -605,12 +613,13 @@ public final class ServiceWorkflow implements Workflow {
         var latest = c.latestEffect(task, REFRESH_PREFIX);
         long next = 1;
         if (latest == null) {
-            if (leaseValid(original, 40)) return original;
+            if (leaseValid(original, REUSE_LEASE_RESERVE_SECONDS)) return original;
         } else {
             next = Long.parseLong(latest.step().substring(REFRESH_PREFIX.length()));
             if (latest.state().equals("SUCCEEDED")) {
                 var cached = c.json.readTree(latest.result());
-                if (sameMessage(original, cached) && leaseValid(cached, 40)) return cached;
+                if (sameMessage(original, cached)
+                        && leaseValid(cached, REUSE_LEASE_RESERVE_SECONDS)) return cached;
                 if (cached.has("id") && !sameMessage(original, cached))
                     releaseUnrelated(c, task, queue, latest.step(), cached);
                 next++;
@@ -618,13 +627,13 @@ public final class ServiceWorkflow implements Workflow {
                 throw new JobStopped(JobState.RECONCILIATION_REQUIRED);
             }
         }
-        for (int attempt = 0; attempt < 3; attempt++, next++) {
+        for (int attempt = 0; attempt < RECEIPT_REACQUIRE_ATTEMPTS; attempt++, next++) {
             c.checkpoint();
             String step = REFRESH_PREFIX + String.format(Locale.ROOT, "%010d", next);
             var received = receiveEnvelope(c, task, queue, step);
             if (!received.has("id")) continue;
             if (sameMessage(original, received)) {
-                if (leaseValid(received, 40)) return received;
+                if (leaseValid(received, REUSE_LEASE_RESERVE_SECONDS)) return received;
             } else releaseUnrelated(c, task, queue, step, received);
         }
         c.audit("RECEIPT_REACQUISITION_REQUIRED", Long.toString(task.sequence()));
@@ -679,7 +688,7 @@ public final class ServiceWorkflow implements Workflow {
                                                         .versionId(p.path("versionId").asText())));
         if (head.contentLength() > p.path("maxBytes").asLong())
             throw new JobStopped(JobState.BUDGET_EXCEEDED);
-        if (head.contentLength() > 5L * 1024 * 1024 * 1024
+        if (head.contentLength() > S3Limits.SINGLE_COPY_MAX_BYTES
                 || p.path("multipart").asBoolean(false)) {
             MultipartCopy.copy(
                     c,

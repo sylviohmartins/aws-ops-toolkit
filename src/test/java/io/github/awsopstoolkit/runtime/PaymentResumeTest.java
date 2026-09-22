@@ -44,24 +44,15 @@ class PaymentResumeTest {
             String endpoint = "http://127.0.0.1:" + server.getAddress().getPort();
             var resources = Set.of("table", "queue", "topic", "function:1", "bucket", endpoint);
             var settings =
-                    new RuntimeProperties(
-                            true,
+                    RuntimeTestFixtures.runtime(
                             true,
                             URI.create("http://127.0.0.1:4566"),
                             resources,
                             Set.of("principal"),
                             1000,
                             2,
-                            10,
-                            86400,
-                            900,
-                            30,
-                            URI.create(endpoint),
-                            Set.of("127.0.0.1"),
-                            3000,
-                            10000,
-                            3,
                             10);
+            var httpSettings = RuntimeTestFixtures.http(URI.create(endpoint), Set.of("127.0.0.1"));
             var json = JsonMapper.builder().build();
             var request =
                     new JobRequest(
@@ -102,29 +93,12 @@ class PaymentResumeTest {
             var policy =
                     new ExecutionPolicy(
                             settings,
-                            new ToolkitProperties(
-                                    ToolkitProperties.Environment.LOCAL,
-                                    directory,
-                                    1048576,
-                                    1,
-                                    10,
-                                    false,
-                                    "test-only-local-token-not-for-deployment",
-                                    new ToolkitProperties.Aws(
-                                            false,
-                                            "us-east-1",
-                                            "",
-                                            "123456789012",
-                                            2,
-                                            3000,
-                                            2000,
-                                            25000,
-                                            30000,
-                                            30000,
-                                            35000)),
+                            RuntimeTestFixtures.toolkit(
+                                    ToolkitProperties.Environment.LOCAL, directory, false),
+                            RuntimeTestFixtures.aws("123456789012"),
                             sts);
             try (var journal = new SqliteJournal(directory);
-                    var http = new PaymentGateway(settings)) {
+                    var http = new PaymentGateway(httpSettings, settings)) {
                 journal.create(
                         "job", json.writeValueAsString(request), "1", policy.identity(), 1000);
                 journal.page(
@@ -148,7 +122,7 @@ class PaymentResumeTest {
                                 request,
                                 journal,
                                 policy,
-                                new DispatchLimiter(2, 1000),
+                                RuntimeTestFixtures.limiter(2, 1000),
                                 new AtomicReference<>(),
                                 resources,
                                 json,
@@ -184,7 +158,7 @@ class PaymentResumeTest {
                                                 .eTag("etag")
                                                 .build()),
                                 http,
-                                settings);
+                                httpSettings);
                 assertEquals("REPAIRED", rule.execute(context, task));
                 assertEquals(0, lookups.get());
                 assertEquals(

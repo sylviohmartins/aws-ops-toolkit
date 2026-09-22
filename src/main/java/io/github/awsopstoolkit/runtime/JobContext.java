@@ -84,6 +84,10 @@ public final class JobContext {
         journal.recordRetry(id);
     }
 
+    void backoff(int attempt) throws InterruptedException {
+        limiter.backoff(attempt);
+    }
+
     public void checkpoint() throws Exception {
         if (Thread.currentThread().isInterrupted()) throw new InterruptedException();
         if (stop.get() != null) throw new JobStopped(stop.get());
@@ -135,21 +139,21 @@ public final class JobContext {
                             .increment();
                 }
                 limiter.failure(e.isThrottlingException());
-                if (!transientError || attempt >= 2) throw e;
+                if (!transientError || attempt >= settings.readMaxAttempts() - 1) throw e;
                 journal.recordRetry(id);
             } catch (SdkClientException e) {
                 io.micrometer.core.instrument.Metrics.counter(
                                 "toolkit.aws.failures", "kind", "read")
                         .increment();
                 limiter.failure(false);
-                if (attempt >= 2) throw e;
+                if (attempt >= settings.readMaxAttempts() - 1) throw e;
                 journal.recordRetry(id);
             } finally {
                 limiter.release();
             }
             io.micrometer.core.instrument.Metrics.counter("toolkit.aws.retries", "kind", "read")
                     .increment();
-            DispatchLimiter.backoff(attempt);
+            limiter.backoff(attempt);
         }
     }
 

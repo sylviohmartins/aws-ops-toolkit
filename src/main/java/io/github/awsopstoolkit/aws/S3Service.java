@@ -15,6 +15,8 @@ import software.amazon.awssdk.services.s3.model.*;
  * Bounded streaming examples. The operation owns local artifact policy and multipart orchestration.
  */
 public final class S3Service {
+    private static final int STREAM_BUFFER_BYTES = 64 * 1024;
+
     private final S3Client client;
     private final AwsCallGate gate;
     private final WriteAuthorization authorization;
@@ -48,7 +50,7 @@ public final class S3Service {
                                 if (declared != null && declared > maxBytes) {
                                     throw new IOException("Object exceeds download budget");
                                 }
-                                byte[] buffer = new byte[64 * 1024];
+                                byte[] buffer = new byte[STREAM_BUFFER_BYTES];
                                 long copied = 0;
                                 while (true) {
                                     if (cancelled.getAsBoolean()
@@ -93,9 +95,13 @@ public final class S3Service {
 
     public ListObjectsV2Response listPage(ListObjectsV2Request request)
             throws InterruptedException {
-        if (request.maxKeys() == null || request.maxKeys() < 1 || request.maxKeys() > 1000) {
+        if (request.maxKeys() == null
+                || request.maxKeys() < 1
+                || request.maxKeys() > S3Limits.MAX_LIST_KEYS) {
             throw new IllegalArgumentException(
-                    "An explicit list page size from 1 to 1000 is required");
+                    "An explicit list page size from 1 to "
+                            + S3Limits.MAX_LIST_KEYS
+                            + " is required");
         }
         return gate.call(() -> client.listObjectsV2(request));
     }

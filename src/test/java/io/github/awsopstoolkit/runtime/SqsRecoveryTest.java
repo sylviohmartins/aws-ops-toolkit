@@ -123,23 +123,13 @@ class SqsRecoveryTest {
     @SuppressWarnings("unchecked")
     Fixture fixture() throws Exception {
         var settings =
-                new RuntimeProperties(
-                        true,
+                RuntimeTestFixtures.runtime(
                         true,
                         null,
                         Set.of("queue", "destination"),
                         Set.of("principal"),
                         1000,
                         2,
-                        10,
-                        86400,
-                        900,
-                        30,
-                        null,
-                        Set.of(),
-                        3000,
-                        10000,
-                        3,
                         10);
         var sts =
                 (StsClient)
@@ -156,26 +146,9 @@ class SqsRecoveryTest {
         var policy =
                 new ExecutionPolicy(
                         settings,
-                        new ToolkitProperties(
-                                ToolkitProperties.Environment.LOCAL,
-                                directory,
-                                1048576,
-                                1,
-                                10,
-                                false,
-                                "local-test-token-not-for-real-use-123",
-                                new ToolkitProperties.Aws(
-                                        false,
-                                        "us-east-1",
-                                        "",
-                                        "123456789012",
-                                        2,
-                                        3000,
-                                        2000,
-                                        25000,
-                                        30000,
-                                        30000,
-                                        35000)),
+                        RuntimeTestFixtures.toolkit(
+                                ToolkitProperties.Environment.LOCAL, directory, false),
+                        RuntimeTestFixtures.aws("123456789012"),
                         sts);
         var sqs =
                 (SqsClient)
@@ -281,7 +254,7 @@ class SqsRecoveryTest {
                         request,
                         journal,
                         policy,
-                        new DispatchLimiter(2, 1000),
+                        RuntimeTestFixtures.limiter(2, 1000),
                         new AtomicReference<>(),
                         Set.of("queue", "destination"),
                         json,
@@ -290,7 +263,14 @@ class SqsRecoveryTest {
                 journal,
                 context,
                 task,
-                new ServiceWorkflow(ServiceWorkflow.Kind.DLQ_REPLAY, sqs, null, null, null, null));
+                new ServiceWorkflow(
+                        ServiceWorkflow.Kind.DLQ_REPLAY,
+                        sqs,
+                        null,
+                        null,
+                        null,
+                        null,
+                        RuntimeTestFixtures.sqs()));
     }
 
     record Fixture(

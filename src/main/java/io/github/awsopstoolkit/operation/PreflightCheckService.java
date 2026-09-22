@@ -20,7 +20,7 @@ public final class PreflightCheckService {
                 || mode != OperationMode.DRY_RUN) {
             throw new IllegalArgumentException("Synthetic example requires LOCAL and DRY_RUN");
         }
-        if (total < 1 || total > 10000000)
+        if (total < 1 || total > SyntheticOperationLimits.MAX_RECORDS)
             throw new IllegalArgumentException("Invalid record count");
         long required =
                 Math.addExact(
@@ -31,8 +31,9 @@ public final class PreflightCheckService {
     }
 
     public long estimate(long records) {
-        return records * 128
-                + ((records + properties.pageSize() - 1) / properties.pageSize()) * 4096;
+        return records * SyntheticOperationLimits.ESTIMATED_BYTES_PER_RECORD
+                + ((records + properties.pageSize() - 1) / properties.pageSize())
+                        * SyntheticOperationLimits.ESTIMATED_BYTES_PER_PAGE;
     }
 
     public void checkDisk() throws IOException {
