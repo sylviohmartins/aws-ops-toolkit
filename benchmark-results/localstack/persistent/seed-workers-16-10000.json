@@ -1,0 +1,85 @@
+{
+  "scope": "LOCALSTACK_DYNAMODB_FIXTURE",
+  "mode": "PERSISTENT",
+  "endpoint": "http://aws-perf-persistent:4566",
+  "account": "123456789012",
+  "baselineRecordsPerTable": 100,
+  "primaryRecords": 10000,
+  "seedWorkers": 16,
+  "checkpointEveryBatches": 100,
+  "elapsedSeconds": 24.86441221390851,
+  "tables": [
+    {
+      "table": "lab-perf-v2-01-small-uniform",
+      "targetRecords": 10000,
+      "recordsWrittenThisRun": 10000,
+      "retryRounds": 0,
+      "elapsedSeconds": 20.939240142004564,
+      "recordsPerSecond": 477.57224866721816,
+      "payloadBytes": 512
+    },
+    {
+      "table": "lab-perf-v2-02-small-skewed",
+      "targetRecords": 100,
+      "recordsWrittenThisRun": 100,
+      "retryRounds": 0,
+      "elapsedSeconds": 0.23500540701206774,
+      "recordsPerSecond": 425.5221242414431,
+      "payloadBytes": 512
+    },
+    {
+      "table": "lab-perf-v2-03-medium-uniform",
+      "targetRecords": 100,
+      "recordsWrittenThisRun": 100,
+      "retryRounds": 0,
+      "elapsedSeconds": 0.28464492806233466,
+      "recordsPerSecond": 351.314884409607,
+      "payloadBytes": 2048
+    },
+    {
+      "table": "lab-perf-v2-04-medium-skewed",
+      "targetRecords": 100,
+      "recordsWrittenThisRun": 100,
+      "retryRounds": 0,
+      "elapsedSeconds": 0.2377639670157805,
+      "recordsPerSecond": 420.58517636258546,
+      "payloadBytes": 2048
+    },
+    {
+      "table": "lab-perf-v2-05-large-uniform",
+      "targetRecords": 100,
+      "recordsWrittenThisRun": 100,
+      "retryRounds": 0,
+      "elapsedSeconds": 0.27212519897148013,
+      "recordsPerSecond": 367.47791229168905,
+      "payloadBytes": 8192
+    },
+    {
+      "table": "lab-perf-v2-06-low-selectivity",
+      "targetRecords": 100,
+      "recordsWrittenThisRun": 100,
+      "retryRounds": 0,
+      "elapsedSeconds": 0.26629967300686985,
+      "recordsPerSecond": 375.5167960623829,
+      "payloadBytes": 1024
+    },
+    {
+      "table": "lab-perf-v2-07-high-cardinality",
+      "targetRecords": 100,
+      "recordsWrittenThisRun": 100,
+      "retryRounds": 0,
+      "elapsedSeconds": 0.2524434939259663,
+      "recordsPerSecond": 396.12825208847266,
+      "payloadBytes": 1024
+    },
+    {
+      "table": "lab-perf-v2-08-hot-key",
+      "targetRecords": 100,
+      "recordsWrittenThisRun": 100,
+      "retryRounds": 0,
+      "elapsedSeconds": 0.25187034101691097,
+      "recordsPerSecond": 397.02967644485716,
+      "payloadBytes": 1024
+    }
+  ]
+}

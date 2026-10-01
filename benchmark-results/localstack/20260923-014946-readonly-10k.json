@@ -1,0 +1,1017 @@
+{
+  "schemaVersion" : 1,
+  "scope" : "LOCALSTACK_DYNAMODB",
+  "generatedAt" : "2026-09-23T04:49:11.904188Z",
+  "endpoint" : "http://127.0.0.1:4566",
+  "account" : "123456789012",
+  "region" : "us-east-1",
+  "baselineRecordsPerTable" : 1000,
+  "primaryRecords" : 10000,
+  "datasetPreparedExternally" : true,
+  "seedManifest" : {
+    "tables" : [ {
+      "table" : "lab-perf-01-small-uniform",
+      "targetRecords" : 10000,
+      "recordsWrittenThisRun" : 9000,
+      "retryRounds" : 0,
+      "elapsedSeconds" : 142.36000144691207,
+      "recordsPerSecond" : 63.220004977003455,
+      "payloadBytes" : 512
+    }, {
+      "table" : "lab-perf-02-small-skewed",
+      "targetRecords" : 1000,
+      "recordsWrittenThisRun" : 0,
+      "retryRounds" : 0,
+      "elapsedSeconds" : 0.058039347059093416,
+      "recordsPerSecond" : 0.0,
+      "payloadBytes" : 512
+    }, {
+      "table" : "lab-perf-03-medium-uniform",
+      "targetRecords" : 1000,
+      "recordsWrittenThisRun" : 0,
+      "retryRounds" : 0,
+      "elapsedSeconds" : 0.06043367797974497,
+      "recordsPerSecond" : 0.0,
+      "payloadBytes" : 2048
+    }, {
+      "table" : "lab-perf-04-medium-skewed",
+      "targetRecords" : 1000,
+      "recordsWrittenThisRun" : 0,
+      "retryRounds" : 0,
+      "elapsedSeconds" : 0.05091642797924578,
+      "recordsPerSecond" : 0.0,
+      "payloadBytes" : 2048
+    }, {
+      "table" : "lab-perf-05-large-uniform",
+      "targetRecords" : 1000,
+      "recordsWrittenThisRun" : 0,
+      "retryRounds" : 0,
+      "elapsedSeconds" : 0.06225385703146458,
+      "recordsPerSecond" : 0.0,
+      "payloadBytes" : 8192
+    }, {
+      "table" : "lab-perf-06-low-selectivity",
+      "targetRecords" : 1000,
+      "recordsWrittenThisRun" : 0,
+      "retryRounds" : 0,
+      "elapsedSeconds" : 0.06353491195477545,
+      "recordsPerSecond" : 0.0,
+      "payloadBytes" : 1024
+    }, {
+      "table" : "lab-perf-07-high-cardinality",
+      "targetRecords" : 1000,
+      "recordsWrittenThisRun" : 0,
+      "retryRounds" : 0,
+      "elapsedSeconds" : 0.06405370205175132,
+      "recordsPerSecond" : 0.0,
+      "payloadBytes" : 1024
+    }, {
+      "table" : "lab-perf-08-hot-key",
+      "targetRecords" : 1000,
+      "recordsWrittenThisRun" : 0,
+      "retryRounds" : 0,
+      "elapsedSeconds" : 0.05961914896033704,
+      "recordsPerSecond" : 0.0,
+      "payloadBytes" : 1024
+    } ],
+    "endpoint" : "http://aws:4566",
+    "primaryRecords" : 10000,
+    "elapsedSeconds" : 147.0300238210475,
+    "baselineRecordsPerTable" : 1000,
+    "checkpointEveryBatches" : 100,
+    "seedWorkers" : 8,
+    "account" : "123456789012",
+    "scope" : "LOCALSTACK_DYNAMODB_FIXTURE"
+  },
+  "pageSize" : 1000,
+  "scanSegments" : 8,
+  "scanWorkers" : 8,
+  "httpConnections" : 32,
+  "tables" : [ {
+    "table" : "lab-perf-01-small-uniform",
+    "recordsTarget" : 1000,
+    "payloadBytes" : 512,
+    "skewed" : false,
+    "tenants" : 1000,
+    "datasetPreparedExternally" : true,
+    "getItem" : {
+      "scanned" : 500,
+      "returned" : 500,
+      "requests" : 500,
+      "elapsedSeconds" : 7.8639443,
+      "scannedPerSecond" : 63.58132521360814,
+      "returnedPerSecond" : 63.58132521360814,
+      "bytesRead" : 0,
+      "megabytesPerSecond" : 0.0
+    },
+    "batchGet" : {
+      "scanned" : 100,
+      "returned" : 100,
+      "requests" : 1,
+      "elapsedSeconds" : 0.206414,
+      "scannedPerSecond" : 484.4632631507553,
+      "returnedPerSecond" : 484.4632631507553,
+      "bytesRead" : 0,
+      "megabytesPerSecond" : 0.0
+    },
+    "query" : {
+      "scanned" : 10,
+      "returned" : 10,
+      "requests" : 1,
+      "elapsedSeconds" : 0.0446632,
+      "scannedPerSecond" : 223.8979741711297,
+      "returnedPerSecond" : 223.8979741711297,
+      "bytesRead" : 0,
+      "megabytesPerSecond" : 0.0
+    },
+    "partiql" : {
+      "scanned" : 10,
+      "returned" : 10,
+      "requests" : 1,
+      "elapsedSeconds" : 0.036428,
+      "scannedPerSecond" : 274.51411002525526,
+      "returnedPerSecond" : 274.51411002525526,
+      "bytesRead" : 0,
+      "megabytesPerSecond" : 0.0
+    },
+    "scan" : {
+      "scanned" : 10000,
+      "returned" : 10000,
+      "requests" : 11,
+      "elapsedSeconds" : 7.9825352,
+      "scannedPerSecond" : 1252.7348454410824,
+      "returnedPerSecond" : 1252.7348454410824,
+      "bytesRead" : 5937800,
+      "megabytesPerSecond" : 0.7093895879039821
+    },
+    "scanFilterOnePercent" : {
+      "scanned" : 10000,
+      "returned" : 100,
+      "requests" : 11,
+      "elapsedSeconds" : 8.2778197,
+      "scannedPerSecond" : 1208.0475732033642,
+      "returnedPerSecond" : 12.08047573203364,
+      "bytesRead" : 59100,
+      "megabytesPerSecond" : 0.0068088161064452
+    },
+    "scanProjection" : {
+      "scanned" : 10000,
+      "returned" : 10000,
+      "requests" : 11,
+      "elapsedSeconds" : 8.0623057,
+      "scannedPerSecond" : 1240.339968751123,
+      "returnedPerSecond" : 1240.339968751123,
+      "bytesRead" : 479800,
+      "megabytesPerSecond" : 0.05675460023944748
+    },
+    "parallelScan" : {
+      "scanned" : 10000,
+      "returned" : 10000,
+      "requests" : 16,
+      "elapsedSeconds" : 2.8305213,
+      "scannedPerSecond" : 3532.9181235979395,
+      "returnedPerSecond" : 3532.9181235979395,
+      "bytesRead" : 5937800,
+      "megabytesPerSecond" : 2.0005952104854434,
+      "segments" : 8,
+      "workers" : 8,
+      "completedSegments" : 8
+    }
+  }, {
+    "table" : "lab-perf-02-small-skewed",
+    "recordsTarget" : 1000,
+    "payloadBytes" : 512,
+    "skewed" : true,
+    "tenants" : 1000,
+    "datasetPreparedExternally" : true,
+    "getItem" : {
+      "scanned" : 500,
+      "returned" : 500,
+      "requests" : 500,
+      "elapsedSeconds" : 7.4005961,
+      "scannedPerSecond" : 67.56212516448507,
+      "returnedPerSecond" : 67.56212516448507,
+      "bytesRead" : 0,
+      "megabytesPerSecond" : 0.0
+    },
+    "batchGet" : {
+      "scanned" : 100,
+      "returned" : 100,
+      "requests" : 1,
+      "elapsedSeconds" : 0.1546515,
+      "scannedPerSecond" : 646.6151314406909,
+      "returnedPerSecond" : 646.6151314406909,
+      "bytesRead" : 0,
+      "megabytesPerSecond" : 0.0
+    },
+    "query" : {
+      "scanned" : 800,
+      "returned" : 800,
+      "requests" : 1,
+      "elapsedSeconds" : 0.12351,
+      "scannedPerSecond" : 6477.208323212695,
+      "returnedPerSecond" : 6477.208323212695,
+      "bytesRead" : 0,
+      "megabytesPerSecond" : 0.0
+    },
+    "partiql" : {
+      "scanned" : 800,
+      "returned" : 800,
+      "requests" : 1,
+      "elapsedSeconds" : 0.0591129,
+      "scannedPerSecond" : 13533.425022287858,
+      "returnedPerSecond" : 13533.425022287858,
+      "bytesRead" : 0,
+      "megabytesPerSecond" : 0.0
+    },
+    "scan" : {
+      "scanned" : 1000,
+      "returned" : 1000,
+      "requests" : 2,
+      "elapsedSeconds" : 0.1433907,
+      "scannedPerSecond" : 6973.952983003779,
+      "returnedPerSecond" : 6973.952983003779,
+      "bytesRead" : 593780,
+      "megabytesPerSecond" : 3.949159433601364
+    },
+    "scanFilterOnePercent" : {
+      "scanned" : 1000,
+      "returned" : 10,
+      "requests" : 2,
+      "elapsedSeconds" : 0.0463003,
+      "scannedPerSecond" : 21598.1321935279,
+      "returnedPerSecond" : 215.98132193527903,
+      "bytesRead" : 5910,
+      "megabytesPerSecond" : 0.12173172117590896
+    },
+    "scanProjection" : {
+      "scanned" : 1000,
+      "returned" : 1000,
+      "requests" : 2,
+      "elapsedSeconds" : 0.0809728,
+      "scannedPerSecond" : 12349.82611444831,
+      "returnedPerSecond" : 12349.82611444831,
+      "bytesRead" : 47980,
+      "megabytesPerSecond" : 0.5650946206772135
+    },
+    "parallelScan" : {
+      "scanned" : 1000,
+      "returned" : 1000,
+      "requests" : 8,
+      "elapsedSeconds" : 0.1339131,
+      "scannedPerSecond" : 7467.529315653211,
+      "returnedPerSecond" : 7467.529315653211,
+      "bytesRead" : 593780,
+      "megabytesPerSecond" : 4.228658253716052,
+      "segments" : 8,
+      "workers" : 8,
+      "completedSegments" : 8
+    }
+  }, {
+    "table" : "lab-perf-03-medium-uniform",
+    "recordsTarget" : 1000,
+    "payloadBytes" : 2048,
+    "skewed" : false,
+    "tenants" : 1000,
+    "datasetPreparedExternally" : true,
+    "getItem" : {
+      "scanned" : 500,
+      "returned" : 500,
+      "requests" : 500,
+      "elapsedSeconds" : 7.6532707,
+      "scannedPerSecond" : 65.33154511312398,
+      "returnedPerSecond" : 65.33154511312398,
+      "bytesRead" : 0,
+      "megabytesPerSecond" : 0.0
+    },
+    "batchGet" : {
+      "scanned" : 100,
+      "returned" : 100,
+      "requests" : 1,
+      "elapsedSeconds" : 0.1556507,
+      "scannedPerSecond" : 642.4641842278897,
+      "returnedPerSecond" : 642.4641842278897,
+      "bytesRead" : 0,
+      "megabytesPerSecond" : 0.0
+    },
+    "query" : {
+      "scanned" : 1,
+      "returned" : 1,
+      "requests" : 1,
+      "elapsedSeconds" : 0.0161924,
+      "scannedPerSecond" : 61.75736765396112,
+      "returnedPerSecond" : 61.75736765396112,
+      "bytesRead" : 0,
+      "megabytesPerSecond" : 0.0
+    },
+    "partiql" : {
+      "scanned" : 1,
+      "returned" : 1,
+      "requests" : 1,
+      "elapsedSeconds" : 0.0188676,
+      "scannedPerSecond" : 53.00091161567978,
+      "returnedPerSecond" : 53.00091161567978,
+      "bytesRead" : 0,
+      "megabytesPerSecond" : 0.0
+    },
+    "scan" : {
+      "scanned" : 1000,
+      "returned" : 1000,
+      "requests" : 3,
+      "elapsedSeconds" : 0.3243472,
+      "scannedPerSecond" : 3083.115870893906,
+      "returnedPerSecond" : 3083.115870893906,
+      "bytesRead" : 2129780,
+      "megabytesPerSecond" : 6.262167472374366
+    },
+    "scanFilterOnePercent" : {
+      "scanned" : 1000,
+      "returned" : 10,
+      "requests" : 3,
+      "elapsedSeconds" : 0.296614,
+      "scannedPerSecond" : 3371.3850323990105,
+      "returnedPerSecond" : 33.7138503239901,
+      "bytesRead" : 21270,
+      "megabytesPerSecond" : 0.06838737453377433
+    },
+    "scanProjection" : {
+      "scanned" : 1000,
+      "returned" : 1000,
+      "requests" : 3,
+      "elapsedSeconds" : 0.314871,
+      "scannedPerSecond" : 3175.9037828189958,
+      "returnedPerSecond" : 3175.9037828189958,
+      "bytesRead" : 47980,
+      "megabytesPerSecond" : 0.14532076215711157
+    },
+    "parallelScan" : {
+      "scanned" : 1000,
+      "returned" : 1000,
+      "requests" : 8,
+      "elapsedSeconds" : 0.2403598,
+      "scannedPerSecond" : 4160.429489457056,
+      "returnedPerSecond" : 4160.429489457056,
+      "bytesRead" : 2129780,
+      "megabytesPerSecond" : 8.45031692319474,
+      "segments" : 8,
+      "workers" : 8,
+      "completedSegments" : 8
+    }
+  }, {
+    "table" : "lab-perf-04-medium-skewed",
+    "recordsTarget" : 1000,
+    "payloadBytes" : 2048,
+    "skewed" : true,
+    "tenants" : 1000,
+    "datasetPreparedExternally" : true,
+    "getItem" : {
+      "scanned" : 500,
+      "returned" : 500,
+      "requests" : 500,
+      "elapsedSeconds" : 8.5085055,
+      "scannedPerSecond" : 58.76472666086894,
+      "returnedPerSecond" : 58.76472666086894,
+      "bytesRead" : 0,
+      "megabytesPerSecond" : 0.0
+    },
+    "batchGet" : {
+      "scanned" : 100,
+      "returned" : 100,
+      "requests" : 1,
+      "elapsedSeconds" : 0.2252094,
+      "scannedPerSecond" : 444.0311994081952,
+      "returnedPerSecond" : 444.0311994081952,
+      "bytesRead" : 0,
+      "megabytesPerSecond" : 0.0
+    },
+    "query" : {
+      "scanned" : 800,
+      "returned" : 800,
+      "requests" : 2,
+      "elapsedSeconds" : 0.3001378,
+      "scannedPerSecond" : 2665.442340151757,
+      "returnedPerSecond" : 2665.442340151757,
+      "bytesRead" : 0,
+      "megabytesPerSecond" : 0.0
+    },
+    "partiql" : {
+      "scanned" : 800,
+      "returned" : 800,
+      "requests" : 2,
+      "elapsedSeconds" : 0.1660802,
+      "scannedPerSecond" : 4816.949883249177,
+      "returnedPerSecond" : 4816.949883249177,
+      "bytesRead" : 0,
+      "megabytesPerSecond" : 0.0
+    },
+    "scan" : {
+      "scanned" : 1000,
+      "returned" : 1000,
+      "requests" : 3,
+      "elapsedSeconds" : 0.3816112,
+      "scannedPerSecond" : 2620.4681623600145,
+      "returnedPerSecond" : 2620.4681623600145,
+      "bytesRead" : 2129780,
+      "megabytesPerSecond" : 5.322476084548104
+    },
+    "scanFilterOnePercent" : {
+      "scanned" : 1000,
+      "returned" : 10,
+      "requests" : 3,
+      "elapsedSeconds" : 0.417236,
+      "scannedPerSecond" : 2396.7251148031332,
+      "returnedPerSecond" : 23.96725114803133,
+      "bytesRead" : 21270,
+      "megabytesPerSecond" : 0.04861673659502281
+    },
+    "scanProjection" : {
+      "scanned" : 1000,
+      "returned" : 1000,
+      "requests" : 3,
+      "elapsedSeconds" : 0.4424075,
+      "scannedPerSecond" : 2260.3595101800943,
+      "returnedPerSecond" : 2260.3595101800943,
+      "bytesRead" : 47980,
+      "megabytesPerSecond" : 0.10342793397754757
+    },
+    "parallelScan" : {
+      "scanned" : 1000,
+      "returned" : 1000,
+      "requests" : 9,
+      "elapsedSeconds" : 0.5191332,
+      "scannedPerSecond" : 1926.2878968249383,
+      "returnedPerSecond" : 1926.2878968249383,
+      "bytesRead" : 2129780,
+      "megabytesPerSecond" : 3.912515103244607,
+      "segments" : 8,
+      "workers" : 8,
+      "completedSegments" : 8
+    }
+  }, {
+    "table" : "lab-perf-05-large-uniform",
+    "recordsTarget" : 1000,
+    "payloadBytes" : 8192,
+    "skewed" : false,
+    "tenants" : 1000,
+    "datasetPreparedExternally" : true,
+    "getItem" : {
+      "scanned" : 500,
+      "returned" : 500,
+      "requests" : 500,
+      "elapsedSeconds" : 8.9237011,
+      "scannedPerSecond" : 56.030563372410576,
+      "returnedPerSecond" : 56.030563372410576,
+      "bytesRead" : 0,
+      "megabytesPerSecond" : 0.0
+    },
+    "batchGet" : {
+      "scanned" : 100,
+      "returned" : 100,
+      "requests" : 1,
+      "elapsedSeconds" : 0.2424455,
+      "scannedPerSecond" : 412.46383207772465,
+      "returnedPerSecond" : 412.46383207772465,
+      "bytesRead" : 0,
+      "megabytesPerSecond" : 0.0
+    },
+    "query" : {
+      "scanned" : 1,
+      "returned" : 1,
+      "requests" : 1,
+      "elapsedSeconds" : 0.0175877,
+      "scannedPerSecond" : 56.85791774933618,
+      "returnedPerSecond" : 56.85791774933618,
+      "bytesRead" : 0,
+      "megabytesPerSecond" : 0.0
+    },
+    "partiql" : {
+      "scanned" : 1,
+      "returned" : 1,
+      "requests" : 1,
+      "elapsedSeconds" : 0.0192387,
+      "scannedPerSecond" : 51.97856404018982,
+      "returnedPerSecond" : 51.97856404018982,
+      "bytesRead" : 0,
+      "megabytesPerSecond" : 0.0
+    },
+    "scan" : {
+      "scanned" : 1000,
+      "returned" : 1000,
+      "requests" : 8,
+      "elapsedSeconds" : 5.2862252,
+      "scannedPerSecond" : 189.17090403186003,
+      "returnedPerSecond" : 189.17090403186003,
+      "bytesRead" : 8273780,
+      "megabytesPerSecond" : 1.4926514075858335
+    },
+    "scanFilterOnePercent" : {
+      "scanned" : 1000,
+      "returned" : 10,
+      "requests" : 8,
+      "elapsedSeconds" : 4.5582755,
+      "scannedPerSecond" : 219.3812111619844,
+      "returnedPerSecond" : 2.193812111619844,
+      "bytesRead" : 82710,
+      "megabytesPerSecond" : 0.017304439521033985
+    },
+    "scanProjection" : {
+      "scanned" : 1000,
+      "returned" : 1000,
+      "requests" : 8,
+      "elapsedSeconds" : 4.1794978,
+      "scannedPerSecond" : 239.26319568824752,
+      "returnedPerSecond" : 239.26319568824752,
+      "bytesRead" : 47980,
+      "megabytesPerSecond" : 0.010948036316988102
+    },
+    "parallelScan" : {
+      "scanned" : 1000,
+      "returned" : 1000,
+      "requests" : 12,
+      "elapsedSeconds" : 0.9208367,
+      "scannedPerSecond" : 1085.9688802585736,
+      "returnedPerSecond" : 1085.9688802585736,
+      "bytesRead" : 8273780,
+      "megabytesPerSecond" : 8.568828203302175,
+      "segments" : 8,
+      "workers" : 8,
+      "completedSegments" : 8
+    }
+  }, {
+    "table" : "lab-perf-06-low-selectivity",
+    "recordsTarget" : 1000,
+    "payloadBytes" : 1024,
+    "skewed" : false,
+    "tenants" : 500,
+    "datasetPreparedExternally" : true,
+    "getItem" : {
+      "scanned" : 500,
+      "returned" : 500,
+      "requests" : 500,
+      "elapsedSeconds" : 8.1165896,
+      "scannedPerSecond" : 61.60222761540143,
+      "returnedPerSecond" : 61.60222761540143,
+      "bytesRead" : 0,
+      "megabytesPerSecond" : 0.0
+    },
+    "batchGet" : {
+      "scanned" : 100,
+      "returned" : 100,
+      "requests" : 1,
+      "elapsedSeconds" : 0.2320342,
+      "scannedPerSecond" : 430.9709516959138,
+      "returnedPerSecond" : 430.9709516959138,
+      "bytesRead" : 0,
+      "megabytesPerSecond" : 0.0
+    },
+    "query" : {
+      "scanned" : 2,
+      "returned" : 2,
+      "requests" : 1,
+      "elapsedSeconds" : 0.0202487,
+      "scannedPerSecond" : 98.77177300271129,
+      "returnedPerSecond" : 98.77177300271129,
+      "bytesRead" : 0,
+      "megabytesPerSecond" : 0.0
+    },
+    "partiql" : {
+      "scanned" : 2,
+      "returned" : 2,
+      "requests" : 1,
+      "elapsedSeconds" : 0.024816,
+      "scannedPerSecond" : 80.59316569954868,
+      "returnedPerSecond" : 80.59316569954868,
+      "bytesRead" : 0,
+      "megabytesPerSecond" : 0.0
+    },
+    "scan" : {
+      "scanned" : 1000,
+      "returned" : 1000,
+      "requests" : 2,
+      "elapsedSeconds" : 0.3025767,
+      "scannedPerSecond" : 3304.9471423278796,
+      "returnedPerSecond" : 3304.9471423278796,
+      "bytesRead" : 1105780,
+      "megabytesPerSecond" : 3.485245181124995
+    },
+    "scanFilterOnePercent" : {
+      "scanned" : 1000,
+      "returned" : 10,
+      "requests" : 2,
+      "elapsedSeconds" : 0.0485835,
+      "scannedPerSecond" : 20583.11978346558,
+      "returnedPerSecond" : 205.8311978346558,
+      "bytesRead" : 11030,
+      "megabytesPerSecond" : 0.2165144073597196
+    },
+    "scanProjection" : {
+      "scanned" : 1000,
+      "returned" : 1000,
+      "requests" : 2,
+      "elapsedSeconds" : 0.0827525,
+      "scannedPerSecond" : 12084.227062626505,
+      "returnedPerSecond" : 12084.227062626505,
+      "bytesRead" : 47980,
+      "megabytesPerSecond" : 0.5529415268562505
+    },
+    "parallelScan" : {
+      "scanned" : 1000,
+      "returned" : 1000,
+      "requests" : 8,
+      "elapsedSeconds" : 0.1417559,
+      "scannedPerSecond" : 7054.380099875914,
+      "returnedPerSecond" : 7054.380099875914,
+      "bytesRead" : 1105780,
+      "megabytesPerSecond" : 7.439224650231159,
+      "segments" : 8,
+      "workers" : 8,
+      "completedSegments" : 8
+    }
+  }, {
+    "table" : "lab-perf-07-high-cardinality",
+    "recordsTarget" : 1000,
+    "payloadBytes" : 1024,
+    "skewed" : false,
+    "tenants" : 10000,
+    "datasetPreparedExternally" : true,
+    "getItem" : {
+      "scanned" : 500,
+      "returned" : 500,
+      "requests" : 500,
+      "elapsedSeconds" : 9.9277917,
+      "scannedPerSecond" : 50.36366748105724,
+      "returnedPerSecond" : 50.36366748105724,
+      "bytesRead" : 0,
+      "megabytesPerSecond" : 0.0
+    },
+    "batchGet" : {
+      "scanned" : 100,
+      "returned" : 100,
+      "requests" : 1,
+      "elapsedSeconds" : 0.3483878,
+      "scannedPerSecond" : 287.03645764863177,
+      "returnedPerSecond" : 287.03645764863177,
+      "bytesRead" : 0,
+      "megabytesPerSecond" : 0.0
+    },
+    "query" : {
+      "scanned" : 1,
+      "returned" : 1,
+      "requests" : 1,
+      "elapsedSeconds" : 0.0305048,
+      "scannedPerSecond" : 32.7817261545724,
+      "returnedPerSecond" : 32.7817261545724,
+      "bytesRead" : 0,
+      "megabytesPerSecond" : 0.0
+    },
+    "partiql" : {
+      "scanned" : 1,
+      "returned" : 1,
+      "requests" : 1,
+      "elapsedSeconds" : 0.0435975,
+      "scannedPerSecond" : 22.93709501691611,
+      "returnedPerSecond" : 22.93709501691611,
+      "bytesRead" : 0,
+      "megabytesPerSecond" : 0.0
+    },
+    "scan" : {
+      "scanned" : 1000,
+      "returned" : 1000,
+      "requests" : 2,
+      "elapsedSeconds" : 0.3893357,
+      "scannedPerSecond" : 2568.4775375081194,
+      "returnedPerSecond" : 2568.4775375081194,
+      "bytesRead" : 1105780,
+      "megabytesPerSecond" : 2.7085982240922246
+    },
+    "scanFilterOnePercent" : {
+      "scanned" : 1000,
+      "returned" : 10,
+      "requests" : 2,
+      "elapsedSeconds" : 0.0640613,
+      "scannedPerSecond" : 15610.048500420691,
+      "returnedPerSecond" : 156.10048500420692,
+      "bytesRead" : 11030,
+      "megabytesPerSecond" : 0.16420253272975943
+    },
+    "scanProjection" : {
+      "scanned" : 1000,
+      "returned" : 1000,
+      "requests" : 2,
+      "elapsedSeconds" : 0.1054257,
+      "scannedPerSecond" : 9485.353191868777,
+      "returnedPerSecond" : 9485.353191868777,
+      "bytesRead" : 47980,
+      "megabytesPerSecond" : 0.4340240918596877
+    },
+    "parallelScan" : {
+      "scanned" : 1000,
+      "returned" : 1000,
+      "requests" : 8,
+      "elapsedSeconds" : 0.1745052,
+      "scannedPerSecond" : 5730.48826052175,
+      "returnedPerSecond" : 5730.48826052175,
+      "bytesRead" : 1105780,
+      "megabytesPerSecond" : 6.043109234542599,
+      "segments" : 8,
+      "workers" : 8,
+      "completedSegments" : 8
+    }
+  }, {
+    "table" : "lab-perf-08-hot-key",
+    "recordsTarget" : 1000,
+    "payloadBytes" : 1024,
+    "skewed" : true,
+    "tenants" : 100,
+    "datasetPreparedExternally" : true,
+    "getItem" : {
+      "scanned" : 500,
+      "returned" : 500,
+      "requests" : 500,
+      "elapsedSeconds" : 41.8129937,
+      "scannedPerSecond" : 11.95800529345977,
+      "returnedPerSecond" : 11.95800529345977,
+      "bytesRead" : 0,
+      "megabytesPerSecond" : 0.0
+    },
+    "batchGet" : {
+      "scanned" : 100,
+      "returned" : 100,
+      "requests" : 1,
+      "elapsedSeconds" : 0.2568565,
+      "scannedPerSecond" : 389.3224426868699,
+      "returnedPerSecond" : 389.3224426868699,
+      "bytesRead" : 0,
+      "megabytesPerSecond" : 0.0
+    },
+    "query" : {
+      "scanned" : 800,
+      "returned" : 800,
+      "requests" : 1,
+      "elapsedSeconds" : 0.1998565,
+      "scannedPerSecond" : 4002.872060703555,
+      "returnedPerSecond" : 4002.872060703555,
+      "bytesRead" : 0,
+      "megabytesPerSecond" : 0.0
+    },
+    "partiql" : {
+      "scanned" : 800,
+      "returned" : 800,
+      "requests" : 1,
+      "elapsedSeconds" : 0.0711105,
+      "scannedPerSecond" : 11250.096680518349,
+      "returnedPerSecond" : 11250.096680518349,
+      "bytesRead" : 0,
+      "megabytesPerSecond" : 0.0
+    },
+    "scan" : {
+      "scanned" : 1000,
+      "returned" : 1000,
+      "requests" : 2,
+      "elapsedSeconds" : 0.1940763,
+      "scannedPerSecond" : 5152.612658011308,
+      "returnedPerSecond" : 5152.612658011308,
+      "bytesRead" : 1105780,
+      "megabytesPerSecond" : 5.433708214736694
+    },
+    "scanFilterOnePercent" : {
+      "scanned" : 1000,
+      "returned" : 10,
+      "requests" : 2,
+      "elapsedSeconds" : 0.0514447,
+      "scannedPerSecond" : 19438.348362416342,
+      "returnedPerSecond" : 194.3834836241634,
+      "bytesRead" : 11030,
+      "megabytesPerSecond" : 0.2044725250601313
+    },
+    "scanProjection" : {
+      "scanned" : 1000,
+      "returned" : 1000,
+      "requests" : 2,
+      "elapsedSeconds" : 0.1021358,
+      "scannedPerSecond" : 9790.886251441709,
+      "returnedPerSecond" : 9790.886251441709,
+      "bytesRead" : 47980,
+      "megabytesPerSecond" : 0.448004457801984
+    },
+    "parallelScan" : {
+      "scanned" : 1000,
+      "returned" : 1000,
+      "requests" : 8,
+      "elapsedSeconds" : 0.1585488,
+      "scannedPerSecond" : 6307.206361700625,
+      "returnedPerSecond" : 6307.206361700625,
+      "bytesRead" : 1105780,
+      "megabytesPerSecond" : 6.651289606705968,
+      "segments" : 8,
+      "workers" : 8,
+      "completedSegments" : 8
+    }
+  } ],
+  "primaryScale" : {
+    "table" : "lab-perf-01-small-uniform",
+    "recordsTarget" : 10000,
+    "payloadBytes" : 512,
+    "skewed" : false,
+    "tenants" : 1000,
+    "datasetPreparedExternally" : true,
+    "getItem" : {
+      "scanned" : 500,
+      "returned" : 500,
+      "requests" : 500,
+      "elapsedSeconds" : 14.0284932,
+      "scannedPerSecond" : 35.64174661324282,
+      "returnedPerSecond" : 35.64174661324282,
+      "bytesRead" : 0,
+      "megabytesPerSecond" : 0.0
+    },
+    "batchGet" : {
+      "scanned" : 100,
+      "returned" : 100,
+      "requests" : 1,
+      "elapsedSeconds" : 4.5937549,
+      "scannedPerSecond" : 21.768684263063314,
+      "returnedPerSecond" : 21.768684263063314,
+      "bytesRead" : 0,
+      "megabytesPerSecond" : 0.0
+    },
+    "query" : {
+      "scanned" : 10,
+      "returned" : 10,
+      "requests" : 1,
+      "elapsedSeconds" : 0.0309357,
+      "scannedPerSecond" : 323.25113057082916,
+      "returnedPerSecond" : 323.25113057082916,
+      "bytesRead" : 0,
+      "megabytesPerSecond" : 0.0
+    },
+    "partiql" : {
+      "scanned" : 10,
+      "returned" : 10,
+      "requests" : 1,
+      "elapsedSeconds" : 0.3715797,
+      "scannedPerSecond" : 26.912126792717686,
+      "returnedPerSecond" : 26.912126792717686,
+      "bytesRead" : 0,
+      "megabytesPerSecond" : 0.0
+    },
+    "scan" : {
+      "scanned" : 10000,
+      "returned" : 10000,
+      "requests" : 11,
+      "elapsedSeconds" : 17.2736458,
+      "scannedPerSecond" : 578.916582855948,
+      "returnedPerSecond" : 578.916582855948,
+      "bytesRead" : 5937800,
+      "megabytesPerSecond" : 0.32782467705555424
+    },
+    "scanFilterOnePercent" : {
+      "scanned" : 10000,
+      "returned" : 100,
+      "requests" : 11,
+      "elapsedSeconds" : 14.7315418,
+      "scannedPerSecond" : 678.8155738050446,
+      "returnedPerSecond" : 6.788155738050446,
+      "bytesRead" : 59100,
+      "megabytesPerSecond" : 0.003825950661838354
+    },
+    "scanProjection" : {
+      "scanned" : 10000,
+      "returned" : 10000,
+      "requests" : 11,
+      "elapsedSeconds" : 9.2557597,
+      "scannedPerSecond" : 1080.4083429261889,
+      "returnedPerSecond" : 1080.4083429261889,
+      "bytesRead" : 479800,
+      "megabytesPerSecond" : 0.04943656186447005
+    },
+    "parallelScan" : {
+      "scanned" : 10000,
+      "returned" : 10000,
+      "requests" : 16,
+      "elapsedSeconds" : 3.084914,
+      "scannedPerSecond" : 3241.5814508929584,
+      "returnedPerSecond" : 3241.5814508929584,
+      "bytesRead" : 5937800,
+      "megabytesPerSecond" : 1.835619195853444,
+      "segments" : 8,
+      "workers" : 8,
+      "completedSegments" : 8
+    },
+    "segmentSweep" : [ {
+      "scanned" : 10000,
+      "returned" : 10000,
+      "requests" : 11,
+      "elapsedSeconds" : 12.0627164,
+      "scannedPerSecond" : 829.0006718553045,
+      "returnedPerSecond" : 829.0006718553045,
+      "bytesRead" : 5937800,
+      "megabytesPerSecond" : 0.4694404782621791,
+      "segments" : 1,
+      "workers" : 1,
+      "completedSegments" : 1
+    }, {
+      "scanned" : 10000,
+      "returned" : 10000,
+      "requests" : 11,
+      "elapsedSeconds" : 4.7644687,
+      "scannedPerSecond" : 2098.8699117700153,
+      "returnedPerSecond" : 2098.8699117700153,
+      "bytesRead" : 5937800,
+      "megabytesPerSecond" : 1.1885328065975187,
+      "segments" : 2,
+      "workers" : 2,
+      "completedSegments" : 2
+    }, {
+      "scanned" : 10000,
+      "returned" : 10000,
+      "requests" : 12,
+      "elapsedSeconds" : 3.0651697,
+      "scannedPerSecond" : 3262.4621077260417,
+      "returnedPerSecond" : 3262.4621077260417,
+      "bytesRead" : 5937800,
+      "megabytesPerSecond" : 1.8474433425193493,
+      "segments" : 4,
+      "workers" : 4,
+      "completedSegments" : 4
+    }, {
+      "scanned" : 10000,
+      "returned" : 10000,
+      "requests" : 16,
+      "elapsedSeconds" : 2.5738113,
+      "scannedPerSecond" : 3885.2887156101924,
+      "returnedPerSecond" : 3885.2887156101924,
+      "bytesRead" : 5937800,
+      "megabytesPerSecond" : 2.2001330695676997,
+      "segments" : 8,
+      "workers" : 8,
+      "completedSegments" : 8
+    }, {
+      "scanned" : 10000,
+      "returned" : 10000,
+      "requests" : 16,
+      "elapsedSeconds" : 1.5305383,
+      "scannedPerSecond" : 6533.64897827124,
+      "returnedPerSecond" : 6533.64897827124,
+      "bytesRead" : 5937800,
+      "megabytesPerSecond" : 3.699827280347726,
+      "segments" : 16,
+      "workers" : 8,
+      "completedSegments" : 16
+    }, {
+      "scanned" : 10000,
+      "returned" : 10000,
+      "requests" : 32,
+      "elapsedSeconds" : 1.4658429,
+      "scannedPerSecond" : 6822.013464062213,
+      "returnedPerSecond" : 6822.013464062213,
+      "bytesRead" : 5937800,
+      "megabytesPerSecond" : 3.8631202265652282,
+      "segments" : 32,
+      "workers" : 8,
+      "completedSegments" : 32
+    } ],
+    "pageSizeSweep" : [ {
+      "scanned" : 10000,
+      "returned" : 10000,
+      "requests" : 101,
+      "elapsedSeconds" : 75.482732,
+      "scannedPerSecond" : 132.48063146416058,
+      "returnedPerSecond" : 132.48063146416058,
+      "bytesRead" : 0,
+      "megabytesPerSecond" : 0.0,
+      "pageSize" : 100
+    }, {
+      "scanned" : 10000,
+      "returned" : 10000,
+      "requests" : 21,
+      "elapsedSeconds" : 16.4492283,
+      "scannedPerSecond" : 607.9312547446374,
+      "returnedPerSecond" : 607.9312547446374,
+      "bytesRead" : 0,
+      "megabytesPerSecond" : 0.0,
+      "pageSize" : 500
+    }, {
+      "scanned" : 10000,
+      "returned" : 10000,
+      "requests" : 11,
+      "elapsedSeconds" : 9.6213095,
+      "scannedPerSecond" : 1039.35955911199,
+      "returnedPerSecond" : 1039.35955911199,
+      "bytesRead" : 0,
+      "megabytesPerSecond" : 0.0,
+      "pageSize" : 1000
+    }, {
+      "scanned" : 10000,
+      "returned" : 10000,
+      "requests" : 6,
+      "elapsedSeconds" : 9.202943,
+      "scannedPerSecond" : 1086.6089249927986,
+      "returnedPerSecond" : 1086.6089249927986,
+      "bytesRead" : 0,
+      "megabytesPerSecond" : 0.0,
+      "pageSize" : 5000
+    } ]
+  },
+  "limitations" : [ "LocalStack performance is not DynamoDB AWS performance.", "RCU/WCU, physical partitions, adaptive capacity and AWS network are not reproduced.", "Eight benchmark schemas are synthetic because eight production table schemas are not present in this repository." ]
+}

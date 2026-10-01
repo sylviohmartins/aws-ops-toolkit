@@ -12,7 +12,7 @@ toolkit:
     enabled: true
     writes: true
     lab-endpoint: http://127.0.0.1:4566
-    principals: ["arn:aws:sts::123456789012:user/moto"]
+    principals: ["arn:aws:iam::123456789012:root"]
     resources:
       - lab-payments
       - lab-consumed

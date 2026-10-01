@@ -1,14 +1,15 @@
-"""Provision ONLY the loopback Moto emulator; dummy credentials never contact AWS."""
+"""Provision ONLY the loopback LocalStack emulator; dummy credentials never contact AWS."""
 import boto3
 import io
 import json
 import os
 import zipfile
 
-endpoint = 'http://localhost:5000'
+endpoint = 'http://localhost:4566'
+LAB_ACCOUNT = '123456789012'
 def client(service):
     return boto3.client(service, endpoint_url=endpoint, region_name='us-east-1',
-                        aws_access_key_id='testing', aws_secret_access_key='testing')
+                        aws_access_key_id=LAB_ACCOUNT, aws_secret_access_key='test')
 
 sts = client('sts')
 print(json.dumps(sts.get_caller_identity(), default=str))

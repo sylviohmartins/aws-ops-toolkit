@@ -1,0 +1,94 @@
+{
+  "scope": "LOCALSTACK_DYNAMODB_FIXTURE",
+  "mode": "PERSISTENT",
+  "endpoint": "http://aws-perf-persistent:4566",
+  "account": "123456789012",
+  "baselineRecordsPerTable": 100,
+  "primaryRecords": 10000,
+  "seedWorkers": 16,
+  "primaryGsi": false,
+  "checkpointEveryBatches": 100,
+  "elapsedSeconds": 23.969132949016057,
+  "tables": [
+    {
+      "table": "lab-perf-v2-01-small-uniform",
+      "targetRecords": 10000,
+      "recordsWrittenThisRun": 10000,
+      "retryRounds": 0,
+      "elapsedSeconds": 19.989022128051147,
+      "recordsPerSecond": 500.2745975235439,
+      "payloadBytes": 512,
+      "globalSecondaryIndex": false
+    },
+    {
+      "table": "lab-perf-v2-02-small-skewed",
+      "targetRecords": 100,
+      "recordsWrittenThisRun": 100,
+      "retryRounds": 0,
+      "elapsedSeconds": 0.26316433190368116,
+      "recordsPerSecond": 379.99070495845257,
+      "payloadBytes": 512,
+      "globalSecondaryIndex": true
+    },
+    {
+      "table": "lab-perf-v2-03-medium-uniform",
+      "targetRecords": 100,
+      "recordsWrittenThisRun": 100,
+      "retryRounds": 0,
+      "elapsedSeconds": 0.25541818293277174,
+      "recordsPerSecond": 391.51480466964586,
+      "payloadBytes": 2048,
+      "globalSecondaryIndex": true
+    },
+    {
+      "table": "lab-perf-v2-04-medium-skewed",
+      "targetRecords": 100,
+      "recordsWrittenThisRun": 100,
+      "retryRounds": 0,
+      "elapsedSeconds": 0.2411722819088027,
+      "recordsPerSecond": 414.6413477060112,
+      "payloadBytes": 2048,
+      "globalSecondaryIndex": true
+    },
+    {
+      "table": "lab-perf-v2-05-large-uniform",
+      "targetRecords": 100,
+      "recordsWrittenThisRun": 100,
+      "retryRounds": 0,
+      "elapsedSeconds": 0.25966946105472744,
+      "recordsPerSecond": 385.10496996381175,
+      "payloadBytes": 8192,
+      "globalSecondaryIndex": true
+    },
+    {
+      "table": "lab-perf-v2-06-low-selectivity",
+      "targetRecords": 100,
+      "recordsWrittenThisRun": 100,
+      "retryRounds": 0,
+      "elapsedSeconds": 0.31213125796057284,
+      "recordsPerSecond": 320.3780379234931,
+      "payloadBytes": 1024,
+      "globalSecondaryIndex": true
+    },
+    {
+      "table": "lab-perf-v2-07-high-cardinality",
+      "targetRecords": 100,
+      "recordsWrittenThisRun": 100,
+      "retryRounds": 0,
+      "elapsedSeconds": 0.24987885600421578,
+      "recordsPerSecond": 400.19392436434424,
+      "payloadBytes": 1024,
+      "globalSecondaryIndex": true
+    },
+    {
+      "table": "lab-perf-v2-08-hot-key",
+      "targetRecords": 100,
+      "recordsWrittenThisRun": 100,
+      "retryRounds": 0,
+      "elapsedSeconds": 0.24596020602621138,
+      "recordsPerSecond": 406.56983345242134,
+      "payloadBytes": 1024,
+      "globalSecondaryIndex": true
+    }
+  ]
+}

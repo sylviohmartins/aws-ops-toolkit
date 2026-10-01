@@ -1,0 +1,189 @@
+{
+  "schemaVersion" : 1,
+  "scope" : "LOCALSTACK_DYNAMODB",
+  "mode" : "PERSISTENT",
+  "generatedAt" : "2026-09-25T17:16:27.370103100Z",
+  "endpoint" : "http://127.0.0.1:4569",
+  "account" : "123456789012",
+  "region" : "us-east-1",
+  "baselineRecordsPerTable" : 100,
+  "primaryRecords" : 100000,
+  "scaleOnly" : true,
+  "deepBenchmark" : true,
+  "parallelOnly" : false,
+  "runSweeps" : false,
+  "getSamples" : 100,
+  "datasetPreparedExternally" : true,
+  "itemShape" : "enterprise-incident-v1",
+  "seedManifest" : {
+    "primaryRecords" : 100000,
+    "seedWorkers" : 16,
+    "account" : "123456789012",
+    "scope" : "LOCALSTACK_DYNAMODB_FIXTURE",
+    "primaryGsi" : false,
+    "itemShape" : "enterprise-incident-v1",
+    "baselineRecordsPerTable" : 100,
+    "endpoint" : "http://aws-perf-persistent:4566",
+    "elapsedSeconds" : 2.5655886179301888,
+    "mode" : "PERSISTENT",
+    "tables" : [ {
+      "table" : "lab-perf-v3-01-rich-uniform",
+      "targetRecords" : 100000,
+      "recordsWrittenThisRun" : 0,
+      "retryRounds" : 0,
+      "elapsedSeconds" : 0.12838117394130677,
+      "recordsPerSecond" : 0.0,
+      "payloadBytes" : 512,
+      "globalSecondaryIndex" : false
+    }, {
+      "table" : "lab-perf-v3-02-rich-skewed",
+      "targetRecords" : 100,
+      "recordsWrittenThisRun" : 0,
+      "retryRounds" : 0,
+      "elapsedSeconds" : 0.09511444706004113,
+      "recordsPerSecond" : 0.0,
+      "payloadBytes" : 512,
+      "globalSecondaryIndex" : true
+    }, {
+      "table" : "lab-perf-v3-03-medium-uniform",
+      "targetRecords" : 100,
+      "recordsWrittenThisRun" : 0,
+      "retryRounds" : 0,
+      "elapsedSeconds" : 0.10142678406555206,
+      "recordsPerSecond" : 0.0,
+      "payloadBytes" : 4096,
+      "globalSecondaryIndex" : true
+    }, {
+      "table" : "lab-perf-v3-04-medium-skewed",
+      "targetRecords" : 100,
+      "recordsWrittenThisRun" : 0,
+      "retryRounds" : 0,
+      "elapsedSeconds" : 0.09843521506991237,
+      "recordsPerSecond" : 0.0,
+      "payloadBytes" : 4096,
+      "globalSecondaryIndex" : true
+    }, {
+      "table" : "lab-perf-v3-05-large-uniform",
+      "targetRecords" : 100,
+      "recordsWrittenThisRun" : 0,
+      "retryRounds" : 0,
+      "elapsedSeconds" : 0.11374213092494756,
+      "recordsPerSecond" : 0.0,
+      "payloadBytes" : 16384,
+      "globalSecondaryIndex" : true
+    }, {
+      "table" : "lab-perf-v3-06-low-selectivity",
+      "targetRecords" : 100,
+      "recordsWrittenThisRun" : 0,
+      "retryRounds" : 0,
+      "elapsedSeconds" : 0.10537011898122728,
+      "recordsPerSecond" : 0.0,
+      "payloadBytes" : 2048,
+      "globalSecondaryIndex" : true
+    }, {
+      "table" : "lab-perf-v3-07-high-cardinality",
+      "targetRecords" : 100,
+      "recordsWrittenThisRun" : 0,
+      "retryRounds" : 0,
+      "elapsedSeconds" : 0.1035980440210551,
+      "recordsPerSecond" : 0.0,
+      "payloadBytes" : 2048,
+      "globalSecondaryIndex" : true
+    }, {
+      "table" : "lab-perf-v3-08-hot-key",
+      "targetRecords" : 100,
+      "recordsWrittenThisRun" : 0,
+      "retryRounds" : 0,
+      "elapsedSeconds" : 0.13974145299289376,
+      "recordsPerSecond" : 0.0,
+      "payloadBytes" : 2048,
+      "globalSecondaryIndex" : true
+    } ],
+    "checkpointEveryBatches" : 100
+  },
+  "pageSize" : 5000,
+  "scanSegments" : 32,
+  "scanWorkers" : 16,
+  "httpConnections" : 64,
+  "httpSocketTimeoutSeconds" : 30,
+  "apiAttemptTimeoutSeconds" : 35,
+  "apiTimeoutSeconds" : 40,
+  "tables" : [ ],
+  "primaryScale" : {
+    "table" : "lab-perf-v3-01-rich-uniform",
+    "recordsTarget" : 100000,
+    "datasetPreparedExternally" : true,
+    "scan" : {
+      "scanned" : 100000,
+      "returned" : 100000,
+      "requests" : 121,
+      "elapsedSeconds" : 88.3843145,
+      "scannedPerSecond" : 1131.4224765526692,
+      "returnedPerSecond" : 1131.4224765526692,
+      "bytesRead" : 126698570,
+      "megabytesPerSecond" : 1.3670884117611095
+    },
+    "parallelScan" : {
+      "scanned" : 100000,
+      "returned" : 100000,
+      "requests" : 137,
+      "elapsedSeconds" : 54.6320791,
+      "scannedPerSecond" : 1830.4264023515811,
+      "returnedPerSecond" : 1830.4264023515811,
+      "bytesRead" : 126698570,
+      "megabytesPerSecond" : 2.211689068490886,
+      "segments" : 32,
+      "workers" : 16,
+      "completedSegments" : 32
+    },
+    "scanFilterOnePercent" : {
+      "scanned" : 100000,
+      "returned" : 1000,
+      "requests" : 121,
+      "elapsedSeconds" : 37.3681875,
+      "scannedPerSecond" : 2676.073063484816,
+      "returnedPerSecond" : 26.76073063484816,
+      "bytesRead" : 1260163,
+      "megabytesPerSecond" : 0.032160647009851606
+    },
+    "scanFilterRareNested" : {
+      "scanned" : 100000,
+      "returned" : 10,
+      "requests" : 121,
+      "elapsedSeconds" : 30.9565809,
+      "scannedPerSecond" : 3230.330905180811,
+      "returnedPerSecond" : 0.3230330905180811,
+      "bytesRead" : 12538,
+      "megabytesPerSecond" : 3.8625611199528704E-4
+    },
+    "scanProjection" : {
+      "scanned" : 100000,
+      "returned" : 100000,
+      "requests" : 121,
+      "elapsedSeconds" : 43.0473315,
+      "scannedPerSecond" : 2323.0243667949544,
+      "returnedPerSecond" : 2323.0243667949544,
+      "bytesRead" : 14898000,
+      "megabytesPerSecond" : 0.33005158440123783
+    },
+    "checkpointResume" : {
+      "segments" : 8,
+      "workers" : 8,
+      "firstPassPages" : 8,
+      "firstPassExamined" : 6652,
+      "resumeCheckpoints" : 8,
+      "resumedPages" : 115,
+      "resumedExamined" : 93348,
+      "totalExamined" : 100000,
+      "completedSegments" : 8,
+      "elapsedSeconds" : 53.3414183
+    },
+    "conditionalWriteConflict" : {
+      "expectedVersion" : 1,
+      "updatedVersion" : 2,
+      "conflictObserved" : true,
+      "elapsedSeconds" : 0.2944666
+    }
+  },
+  "limitations" : [ "LocalStack performance is not DynamoDB AWS performance.", "RCU/WCU, physical partitions, adaptive capacity and AWS network are not reproduced.", "Eight benchmark schemas are synthetic because eight production table schemas are not present in this repository." ]
+}

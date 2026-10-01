@@ -1,0 +1,131 @@
+{
+  "schemaVersion" : 1,
+  "scope" : "LOCALSTACK_DYNAMODB",
+  "mode" : "PERSISTENT",
+  "generatedAt" : "2026-09-27T02:52:17.111644600Z",
+  "endpoint" : "http://127.0.0.1:4569",
+  "account" : "123456789012",
+  "region" : "us-east-1",
+  "baselineRecordsPerTable" : 100,
+  "primaryRecords" : 1000000,
+  "scaleOnly" : true,
+  "deepBenchmark" : false,
+  "parallelOnly" : true,
+  "runSweeps" : false,
+  "getSamples" : 100,
+  "datasetPreparedExternally" : true,
+  "itemShape" : "enterprise-incident-v1",
+  "seedManifest" : {
+    "checkpointEveryBatches" : 100,
+    "tables" : [ {
+      "table" : "lab-perf-v3-01-rich-uniform",
+      "targetRecords" : 1000000,
+      "recordsWrittenThisRun" : 820000,
+      "retryRounds" : 0,
+      "elapsedSeconds" : 1754.192562151,
+      "recordsPerSecond" : 467.4515316576829,
+      "payloadBytes" : 512,
+      "globalSecondaryIndex" : false
+    }, {
+      "table" : "lab-perf-v3-02-rich-skewed",
+      "targetRecords" : 100,
+      "recordsWrittenThisRun" : 0,
+      "retryRounds" : 0,
+      "elapsedSeconds" : 0.17517397500023435,
+      "recordsPerSecond" : 0.0,
+      "payloadBytes" : 512,
+      "globalSecondaryIndex" : true
+    }, {
+      "table" : "lab-perf-v3-03-medium-uniform",
+      "targetRecords" : 100,
+      "recordsWrittenThisRun" : 0,
+      "retryRounds" : 0,
+      "elapsedSeconds" : 0.2089249849996122,
+      "recordsPerSecond" : 0.0,
+      "payloadBytes" : 4096,
+      "globalSecondaryIndex" : true
+    }, {
+      "table" : "lab-perf-v3-04-medium-skewed",
+      "targetRecords" : 100,
+      "recordsWrittenThisRun" : 0,
+      "retryRounds" : 0,
+      "elapsedSeconds" : 0.17689179099988905,
+      "recordsPerSecond" : 0.0,
+      "payloadBytes" : 4096,
+      "globalSecondaryIndex" : true
+    }, {
+      "table" : "lab-perf-v3-05-large-uniform",
+      "targetRecords" : 100,
+      "recordsWrittenThisRun" : 0,
+      "retryRounds" : 0,
+      "elapsedSeconds" : 0.1750989639999716,
+      "recordsPerSecond" : 0.0,
+      "payloadBytes" : 16384,
+      "globalSecondaryIndex" : true
+    }, {
+      "table" : "lab-perf-v3-06-low-selectivity",
+      "targetRecords" : 100,
+      "recordsWrittenThisRun" : 0,
+      "retryRounds" : 0,
+      "elapsedSeconds" : 0.18851669300011054,
+      "recordsPerSecond" : 0.0,
+      "payloadBytes" : 2048,
+      "globalSecondaryIndex" : true
+    }, {
+      "table" : "lab-perf-v3-07-high-cardinality",
+      "targetRecords" : 100,
+      "recordsWrittenThisRun" : 0,
+      "retryRounds" : 0,
+      "elapsedSeconds" : 0.16845027699991988,
+      "recordsPerSecond" : 0.0,
+      "payloadBytes" : 2048,
+      "globalSecondaryIndex" : true
+    }, {
+      "table" : "lab-perf-v3-08-hot-key",
+      "targetRecords" : 100,
+      "recordsWrittenThisRun" : 0,
+      "retryRounds" : 0,
+      "elapsedSeconds" : 0.16921544399974664,
+      "recordsPerSecond" : 0.0,
+      "payloadBytes" : 2048,
+      "globalSecondaryIndex" : true
+    } ],
+    "mode" : "PERSISTENT",
+    "elapsedSeconds" : 1755.9557542040002,
+    "endpoint" : "http://aws-perf-persistent:4566",
+    "baselineRecordsPerTable" : 100,
+    "itemShape" : "enterprise-incident-v1",
+    "primaryGsi" : false,
+    "scope" : "LOCALSTACK_DYNAMODB_FIXTURE",
+    "account" : "123456789012",
+    "seedWorkers" : 32,
+    "primaryRecords" : 1000000
+  },
+  "pageSize" : 5000,
+  "scanSegments" : 64,
+  "scanWorkers" : 32,
+  "httpConnections" : 128,
+  "httpSocketTimeoutSeconds" : 30,
+  "apiAttemptTimeoutSeconds" : 35,
+  "apiTimeoutSeconds" : 40,
+  "tables" : [ ],
+  "primaryScale" : {
+    "table" : "lab-perf-v3-01-rich-uniform",
+    "recordsTarget" : 1000000,
+    "datasetPreparedExternally" : true,
+    "parallelScan" : {
+      "scanned" : 1000000,
+      "returned" : 1000000,
+      "requests" : 1237,
+      "elapsedSeconds" : 544.5767148,
+      "scannedPerSecond" : 1836.288575737686,
+      "returnedPerSecond" : 1836.288575737686,
+      "bytesRead" : 1267982130,
+      "megabytesPerSecond" : 2.220517253454721,
+      "segments" : 64,
+      "workers" : 32,
+      "completedSegments" : 64
+    }
+  },
+  "limitations" : [ "LocalStack performance is not DynamoDB AWS performance.", "RCU/WCU, physical partitions, adaptive capacity and AWS network are not reproduced.", "Eight benchmark schemas are synthetic because eight production table schemas are not present in this repository." ]
+}

@@ -181,6 +181,15 @@ public final class ServiceWorkflow implements Workflow {
                     "A numeric Lambda version or named alias is required");
     }
 
+    static LambdaTarget lambdaTarget(String function) {
+        requireQualifiedFunction(function);
+        int separator = function.lastIndexOf(':');
+        return new LambdaTarget(
+                function.substring(0, separator), function.substring(separator + 1));
+    }
+
+    record LambdaTarget(String functionName, String qualifier) {}
+
     @Override
     public void preflight(JobContext c) throws Exception {
         var p = c.request().parameters();
@@ -202,9 +211,29 @@ public final class ServiceWorkflow implements Workflow {
             }
             case LAMBDA_INVOKE -> {
                 String function = DynamoWorkflow.required(p, "function");
+                var target = lambdaTarget(function);
                 c.read(
                         function,
-                        () -> lambda.getFunctionConfiguration(b -> b.functionName(function)));
+                        () ->
+                                lambda.getFunctionConfiguration(
+                                        b -> b.functionName(target.functionName())));
+                if (target.qualifier().matches("\\d+")) {
+                    c.read(
+                            function,
+                            () ->
+                                    lambda.getFunctionConfiguration(
+                                            b ->
+                                                    b.functionName(target.functionName())
+                                                            .qualifier(target.qualifier())));
+                } else {
+                    c.read(
+                            function,
+                            () ->
+                                    lambda.getAlias(
+                                            b ->
+                                                    b.functionName(target.functionName())
+                                                            .name(target.qualifier())));
+                }
             }
             case S3_COPY -> {
                 String source = DynamoWorkflow.required(p, "bucket");
@@ -372,6 +401,7 @@ public final class ServiceWorkflow implements Workflow {
             }
             case LAMBDA_INVOKE -> {
                 String function = p.path("function").asText();
+                var target = lambdaTarget(function);
                 String result =
                         c.effect(
                                 task,
@@ -384,7 +414,8 @@ public final class ServiceWorkflow implements Workflow {
                                     var response =
                                             lambda.invoke(
                                                     b ->
-                                                            b.functionName(function)
+                                                            b.functionName(target.functionName())
+                                                                    .qualifier(target.qualifier())
                                                                     .invocationType(mode)
                                                                     .payload(
                                                                             SdkBytes.fromUtf8String(
