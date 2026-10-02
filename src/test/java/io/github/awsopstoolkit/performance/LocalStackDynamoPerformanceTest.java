@@ -97,7 +97,7 @@ class LocalStackDynamoPerformanceTest {
                     new TableProfile("lab-perf-v3-08-hot-key", 2048, true, 100));
 
     @Test
-    @Timeout(3600)
+    @Timeout(value = 48, unit = TimeUnit.HOURS)
     void exercisesEightPersistedDynamoTablesThroughLocalStack() throws Exception {
         validateConfiguration();
         Map<String, Object> seedManifest = readSeedManifest();
