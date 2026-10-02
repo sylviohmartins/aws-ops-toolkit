@@ -54,6 +54,43 @@ function Assert-PositiveTarget {
     if ($TargetRecords -lt 1) { throw 'TargetRecords must be >= 1 for this action.' }
 }
 
+function Get-HostFreeBytes {
+    return [long](Get-PSDrive C).Free
+}
+
+function Get-VolumeFileBytes([string]$Path) {
+    $value = (& docker run --rm -v "$($volume):/data" --entrypoint sh $image -lc "if [ -f '$Path' ]; then stat -c %s '$Path'; else echo 0; fi").Trim()
+    if ($LASTEXITCODE -ne 0 -or $value -notmatch '^\d+$') {
+        throw "Could not determine Docker-volume file size for $Path."
+    }
+    return [long]$value
+}
+
+function Assert-HostReserve([long]$AdditionalBytes, [string]$Operation) {
+    $reserveBytes = 10GB
+    $freeBytes = Get-HostFreeBytes
+    Write-Output ("OFFLINE STORAGE PREFLIGHT operation={0} free={1:N2}GB additional={2:N2}GB reserve={3:N0}GB" -f $Operation,($freeBytes/1GB),($AdditionalBytes/1GB),($reserveBytes/1GB))
+    if (($freeBytes - $AdditionalBytes) -lt $reserveBytes) {
+        throw "$Operation would violate the 10 GB host-disk reserve. Free or move storage before continuing."
+    }
+}
+
+function Restore-PromotionBackup([string]$BackupDb) {
+    & docker compose --profile performance-persistent stop aws-perf-persistent | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "CRITICAL: rollback could not stop persistent LocalStack. Backup remains at $BackupDb."
+    }
+    $restore = "set -eu; gzip -dc '$BackupDb' > '$liveDb'; rm -f '$liveDb-wal' '$liveDb-shm'"
+    & docker run --rm -v "$($volume):/data" --entrypoint sh $image -lc $restore | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "CRITICAL: rollback restore failed. Backup remains at $BackupDb; do not continue the lab until recovered."
+    }
+    & docker compose --profile performance-persistent up -d --wait aws-perf-persistent | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "Rollback restored the database, but persistent LocalStack did not become healthy. Backup remains at $BackupDb."
+    }
+}
+
 function Invoke-ApiValidation([switch]$FullScan) {
     Assert-PositiveTarget
     $args = @(
@@ -77,6 +114,8 @@ try {
             Stop-Validator
             $running = (& docker ps --filter 'name=aws-ops-toolkit-aws-perf-persistent-1' --format '{{.Names}}').Trim()
             if (!$running) { throw 'Start the persistent LocalStack service before clone.' }
+            $sourceBytes = Get-VolumeFileBytes $liveDb
+            Assert-HostReserve $sourceBytes 'offline clone'
             $py = "import os,sqlite3,time; src='$sourceDb'; dst_dir='$offlineDir'; os.makedirs(dst_dir,exist_ok=True); dst=dst_dir+'/$dbName'; os.path.exists(dst) and os.remove(dst); t=time.perf_counter(); s=sqlite3.connect('file:'+src+'?mode=ro',uri=True); d=sqlite3.connect(dst); s.backup(d,pages=10000); d.close(); s.close(); print('OFFLINE_CLONE_SECONDS',time.perf_counter()-t,'BYTES',os.path.getsize(dst))"
             & docker exec aws-ops-toolkit-aws-perf-persistent-1 python -c $py
             if ($LASTEXITCODE -ne 0) { throw 'Offline fixture clone failed.' }
@@ -89,6 +128,12 @@ try {
                 throw 'AppendFrom must be >= 1 and TargetRecords must be greater than AppendFrom.'
             }
             Stop-Validator
+            $offlineBytes = Get-VolumeFileBytes $offlineDb
+            if ($offlineBytes -lt 1) { throw 'Offline fixture database is missing; clone it before append.' }
+            $bytesPerRecord = [double]$offlineBytes / [double]$AppendFrom
+            $projectedBytes = [long][math]::Ceiling($bytesPerRecord * [double]$TargetRecords)
+            $growthBytes = [long][math]::Max([double]0, [double]($projectedBytes - $offlineBytes))
+            Assert-HostReserve $growthBytes 'offline append'
             & docker run --rm -v "$($volume):/data" -v "$($projectRoot)\lab:/lab:ro" --entrypoint python $image /lab/build_dynamodb_sqlite_fixture.py --db $offlineDb --append-from $AppendFrom --target $TargetRecords --batch-size $BatchSize
             if ($LASTEXITCODE -ne 0) { throw 'Offline fixture append failed.' }
             & docker run --rm -v "$($volume):/data" -v "$($projectRoot)\lab:/lab:ro" --entrypoint python $image /lab/build_dynamodb_sqlite_fixture.py --db $offlineDb --target $TargetRecords --samples $Samples
@@ -127,7 +172,7 @@ try {
                 throw 'Promotion requires -ValidatedOffline after a recorded validation of the same target.'
             }
             if (!(Test-Path -LiteralPath $validationMarkerPath)) {
-                throw 'Promotion requires a recorded full-validate marker.'
+                throw 'Promotion requires a recorded validation marker.'
             }
             $validationMarker = Get-Content -LiteralPath $validationMarkerPath -Raw | ConvertFrom-Json
             if ([long]$validationMarker.targetRecords -ne $TargetRecords) {
@@ -140,38 +185,61 @@ try {
             & docker run --rm -v "$($volume):/data" -v "$($projectRoot)\lab:/lab:ro" --entrypoint python $image /lab/build_dynamodb_sqlite_fixture.py --db $offlineDb --target $TargetRecords --samples $Samples
             if ($LASTEXITCODE -ne 0) { throw 'Offline fixture structural validation failed before promotion.' }
 
+            $liveBytes = Get-VolumeFileBytes $liveDb
+            $offlineBytes = Get-VolumeFileBytes $offlineDb
+            if ($liveBytes -lt 1 -or $offlineBytes -lt 1) {
+                throw 'Live and offline fixture databases must both exist before promotion.'
+            }
+            $replacementGrowth = [long][math]::Max([double]0, [double]($offlineBytes - $liveBytes))
+            Assert-HostReserve ($liveBytes + $replacementGrowth) 'offline promotion'
+
             $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-            $backupDb = "/data/offline-backups/$stamp-$dbName"
+            $backupDb = "/data/offline-backups/$stamp-$dbName.gz"
             & docker compose --profile performance-persistent stop aws-perf-persistent
             if ($LASTEXITCODE -ne 0) { throw 'Could not stop persistent LocalStack before promotion.' }
 
-            $copy = "set -eu; test -f '$liveDb'; test -f '$offlineDb'; mkdir -p /data/offline-backups; cp '$liveDb' '$backupDb'; rm -f '$liveDb-wal' '$liveDb-shm'; cp '$offlineDb' '$liveDb'"
-            & docker run --rm -v "$($volume):/data" --entrypoint sh $image -lc $copy
+            $backup = "set -eu; test -f '$liveDb'; mkdir -p /data/offline-backups; gzip -1 -c '$liveDb' > '$backupDb'; test -s '$backupDb'"
+            & docker run --rm -v "$($volume):/data" --entrypoint sh $image -lc $backup
             if ($LASTEXITCODE -ne 0) {
-                & docker compose --profile performance-persistent up -d --wait aws-perf-persistent
-                throw 'Offline fixture promotion copy failed; original live database was not replaced.'
+                & docker compose --profile performance-persistent up -d --wait aws-perf-persistent | Out-Null
+                throw 'Could not create compressed rollback backup before promotion.'
+            }
+
+            $copy = "set -eu; test -f '$offlineDb'; rm -f '$liveDb-wal' '$liveDb-shm'; cp '$offlineDb' '$liveDb'"
+            & docker run --rm -v "$($volume):/data" --entrypoint sh $image -lc $copy
+            $copySucceeded = $LASTEXITCODE -eq 0
+            if ($copySucceeded) {
+                $promotedBytes = Get-VolumeFileBytes $liveDb
+                $copySucceeded = $promotedBytes -eq $offlineBytes
+            }
+            if (-not $copySucceeded) {
+                Restore-PromotionBackup $backupDb
+                throw 'Offline fixture promotion copy failed or size verification mismatched; compressed rollback backup was restored.'
             }
 
             try {
                 & docker compose --profile performance-persistent up -d --wait aws-perf-persistent
                 if ($LASTEXITCODE -ne 0) { throw 'LocalStack did not become healthy after promotion.' }
-                & docker run --rm --network $network -v "$($projectRoot)\lab:/lab:ro" --entrypoint python $image /lab/validate_offline_fixture.py --endpoint http://aws-perf-persistent:4566 --access-key 123456789012 --expected $TargetRecords
-                if ($LASTEXITCODE -ne 0) { throw 'Promoted fixture failed LocalStack API validation.' }
+                & docker run --rm --network $network -v "$($projectRoot)\lab:/lab:ro" --entrypoint python $image /lab/validate_offline_fixture.py --endpoint http://aws-perf-persistent:4566 --access-key 123456789012 --expected $TargetRecords --probe-only --read-timeout 60 --max-attempts 2
+                if ($LASTEXITCODE -ne 0) { throw 'Promoted fixture failed LocalStack public API probe validation.' }
             } catch {
-                & docker compose --profile performance-persistent stop aws-perf-persistent | Out-Null
-                $restore = "set -eu; cp '$backupDb' '$liveDb'; rm -f '$liveDb-wal' '$liveDb-shm'"
-                & docker run --rm -v "$($volume):/data" --entrypoint sh $image -lc $restore | Out-Null
-                & docker compose --profile performance-persistent up -d --wait aws-perf-persistent | Out-Null
+                Restore-PromotionBackup $backupDb
                 throw
             }
 
-            if (Test-Path -LiteralPath $manifestPath) {
+            if (!(Test-Path -LiteralPath $manifestPath)) {
+                Restore-PromotionBackup $backupDb
+                throw 'Seed manifest is missing after promotion validation; rollback backup was restored.'
+            }
+            $manifestTempPath = "$manifestPath.tmp"
+            try {
                 $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
                 $sourceRecords = [long]$manifest.primaryRecords
-                $manifest.primaryRecords = $TargetRecords
-                if ($manifest.tables -and $manifest.tables.Count -gt 0) {
-                    $manifest.tables[0].targetRecords = $TargetRecords
+                if (!$manifest.tables -or $manifest.tables.Count -lt 1) {
+                    throw 'Seed manifest does not contain the primary table entry.'
                 }
+                $manifest.primaryRecords = $TargetRecords
+                $manifest.tables[0].targetRecords = $TargetRecords
                 $manifest | Add-Member -Force NoteProperty fixtureOrigin 'OFFLINE_PROMOTION'
                 $manifest | Add-Member -Force NoteProperty offlinePromotion ([ordered]@{
                     promotedAt = (Get-Date).ToUniversalTime().ToString('o')
@@ -180,9 +248,19 @@ try {
                     validation = $validationMarker.validator
                     backupDb = $backupDb
                 })
-                $manifest | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $manifestPath
+                $manifest | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $manifestTempPath -Encoding UTF8
+                Move-Item -LiteralPath $manifestTempPath -Destination $manifestPath -Force
+            } catch {
+                Remove-Item -LiteralPath $manifestTempPath -Force -ErrorAction SilentlyContinue
+                Restore-PromotionBackup $backupDb
+                throw
             }
-            Write-Output "OFFLINE PROMOTION OK target=$TargetRecords backup=$backupDb"
+
+            & docker run --rm -v "$($volume):/data" --entrypoint sh $image -lc 'rm -rf /data/offline-test'
+            if ($LASTEXITCODE -ne 0) {
+                Write-Warning 'Promotion succeeded, but the duplicate offline fixture could not be removed.'
+            }
+            Write-Output "OFFLINE PROMOTION OK target=$TargetRecords backup=$backupDb offlineFixture=removed"
         }
         'status' {
             & docker ps -a --filter "name=$validator" --format 'table {{.Names}}\t{{.Status}}'

@@ -102,6 +102,7 @@ def main():
     parser.add_argument("--table", default="lab-perf-v3-01-rich-uniform")
     parser.add_argument("--expected", type=int, required=True)
     parser.add_argument("--full-scan", action="store_true")
+    parser.add_argument("--probe-only", action="store_true")
     parser.add_argument("--segments", type=int, default=64)
     parser.add_argument("--workers", type=int, default=32)
     parser.add_argument("--read-timeout", type=int, default=300)
@@ -122,20 +123,29 @@ def main():
             "expected, segments, workers, read-timeout and max-attempts must be positive"
         )
 
+    if args.probe_only and args.full_scan:
+        raise SystemExit("--probe-only cannot be combined with --full-scan")
+
     ddb = client(
         args.endpoint,
         args.access_key,
         args.read_timeout,
         args.max_attempts,
     )
-    described = ddb.describe_table(TableName=args.table)["Table"]
     result = {
-        "itemCount": described.get("ItemCount"),
-        "tableSizeBytes": described.get("TableSizeBytes"),
         "expected": args.expected,
+        "validationMode": (
+            "public-api-probes-query"
+            if args.probe_only
+            else "describe-plus-probes-query"
+        ),
     }
-    if result["itemCount"] != args.expected:
-        raise AssertionError(result)
+    if not args.probe_only:
+        described = ddb.describe_table(TableName=args.table)["Table"]
+        result["itemCount"] = described.get("ItemCount")
+        result["tableSizeBytes"] = described.get("TableSizeBytes")
+        if result["itemCount"] != args.expected:
+            raise AssertionError(result)
 
     probes = (0, args.expected - 1)
     for sequence in probes:
@@ -162,6 +172,8 @@ def main():
     )
     if query["Count"] != 1:
         raise AssertionError(f"exact query returned {query['Count']}")
+    result["probesVerified"] = list(probes)
+    result["exactQueryCount"] = query["Count"]
 
     if args.full_scan:
         started = time.perf_counter()
