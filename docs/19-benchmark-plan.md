@@ -177,6 +177,8 @@ O resultado reforça a hipótese já observada em 5M: `workers` e `TotalSegments
 
 O script de benchmark também passou a aplicar o gate de **10 GiB livres** antes de qualquer benchmark persistente, e não apenas antes de crescimento do fixture. `-AllowLowDisk` continua disponível como override explícito, mas não deve ser usado para medições longas neste host sem justificativa.
 
+Durante a primeira execução full-scan `2 workers / 512 segments`, o Windows reiniciou às 13:14:11, cerca de dois minutos depois do último checkpoint. O reboot preservou 19 checkpoints concluídos, mas deixou `segment-0019.json`, `segment-0020.json` e `run-state.json` com bytes NUL. O loader anterior abortava toda a retomada ao encontrar qualquer JSON inválido. O harness foi endurecido para mover estado fisicamente corrompido para `.corrupt-<timestamp>`, refazer apenas o segmento afetado e continuar reutilizando checkpoints válidos. Mismatch de configuração continua sendo erro duro. Quando `run-state.json` é perdido, a execução final deve continuar marcada como `RESUMED`, com histórico de elapsed incompleto em vez de inventar tempo acumulado anterior ao reboot.
+
 ### Gate de capacidade para 50M, 75M e 100M
 
 Após o fechamento do baseline 25M, o host tinha apenas **~9,07 GiB livres** no único volume disponível (`C:`). O DB live de 25M mede **53.575.275.520 bytes (~49,90 GiB)**, aproximadamente **2.143 bytes por registro**. Mantendo essa densidade, o fixture de 50M projeta ~**99,79 GiB**, o de 75M ~**149,69 GiB** e o de 100M ~**199,58 GiB**.

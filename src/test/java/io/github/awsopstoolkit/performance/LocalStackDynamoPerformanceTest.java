@@ -823,8 +823,13 @@ class LocalStackDynamoPerformanceTest {
         for (int segment = 0; segment < segments; segment++) {
             Path path = root.resolve(String.format(Locale.ROOT, "segment-%04d.json", segment));
             if (!Files.exists(path)) continue;
-            ProjectionCheckpointFile saved =
-                    JSON.readValue(path.toFile(), ProjectionCheckpointFile.class);
+            ProjectionCheckpointFile saved;
+            try {
+                saved = JSON.readValue(path.toFile(), ProjectionCheckpointFile.class);
+            } catch (Exception failure) {
+                quarantineCorruptProjectionState(path, failure);
+                continue;
+            }
             if (!table.equals(saved.table())
                     || saved.recordsTarget() != PRIMARY_RECORDS
                     || saved.pageSize() != PAGE_SIZE
@@ -873,7 +878,28 @@ class LocalStackDynamoPerformanceTest {
     private static ProjectionRunState loadProjectionRunState(Path root) throws Exception {
         Path path = root.resolve("run-state.json");
         if (!Files.exists(path)) return new ProjectionRunState(0, 0);
-        return JSON.readValue(path.toFile(), ProjectionRunState.class);
+        try {
+            return JSON.readValue(path.toFile(), ProjectionRunState.class);
+        } catch (Exception failure) {
+            quarantineCorruptProjectionState(path, failure);
+            return new ProjectionRunState(0, 0);
+        }
+    }
+
+    private static void quarantineCorruptProjectionState(Path path, Exception failure)
+            throws Exception {
+        Path quarantine =
+                path.resolveSibling(
+                        path.getFileName()
+                                + ".corrupt-"
+                                + Long.toUnsignedString(System.currentTimeMillis()));
+        Files.move(path, quarantine, StandardCopyOption.REPLACE_EXISTING);
+        System.err.printf(
+                Locale.ROOT,
+                "PROJECTION_STATE_QUARANTINED source=%s quarantine=%s reason=%s%n",
+                path,
+                quarantine,
+                failure.getMessage());
     }
 
     private static void saveProjectionRunState(Path root, ProjectionRunState state)
