@@ -23,7 +23,9 @@ param(
     [switch]$ProjectionOnly,
     [switch]$FreshProjection,
     [switch]$WriteCompatibility,
-    [switch]$SkipSweeps
+    [switch]$SkipSweeps,
+    [switch]$SegmentProfileOnly,
+    [ValidatePattern('^\d+(,\d+)*$')][string]$SegmentProfileValues = '128,256,512'
 )
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
@@ -78,6 +80,16 @@ function Assert-StorageHeadroom {
     }
 }
 
+function Assert-BenchmarkHeadroom {
+    if ($memory -or $AllowLowDisk) { return }
+    $freeBytes = (Get-PSDrive C).Free
+    $reserveBytes = 10GB
+    Write-Output ("BENCHMARK STORAGE PREFLIGHT free={0:N2}GB reserve={1:N0}GB" -f ($freeBytes/1GB),($reserveBytes/1GB))
+    if ($freeBytes -lt $reserveBytes) {
+        throw 'Benchmark would start below the 10 GB host-disk reserve. Free/move storage or use -AllowLowDisk explicitly.'
+    }
+}
+
 function Seed-Lab {
     Start-Lab
     Assert-StorageHeadroom
@@ -116,6 +128,7 @@ function Seed-Lab {
 }
 function Invoke-Benchmark {
     if (!(Test-Path -LiteralPath $manifestPath)) { throw "Seed first: missing $manifestPath" }
+    Assert-BenchmarkHeadroom
     New-Item -ItemType Directory -Force -Path $outputDir | Out-Null
     $lockPath = Join-Path $outputDir '.benchmark.lock'
     try {
@@ -141,6 +154,7 @@ function Invoke-Benchmark {
     $projectionOnlyValue = if ($ProjectionOnly) { 'true' } else { 'false' }
     $writeCompatibilityValue = if ($WriteCompatibility) { 'true' } else { 'false' }
     $runSweepsValue = if ($SkipSweeps) { 'false' } else { 'true' }
+    $segmentProfileOnlyValue = if ($SegmentProfileOnly) { 'true' } else { 'false' }
     $mvnArgs = @(
         '-B','-ntp','test',
         '-Dtoolkit.localstack.performance=true',
@@ -154,6 +168,8 @@ function Invoke-Benchmark {
         "-Dtoolkit.localstack.projection-only=$projectionOnlyValue",
         "-Dtoolkit.localstack.write-compatibility=$writeCompatibilityValue",
         "-Dtoolkit.localstack.run-sweeps=$runSweepsValue",
+        "-Dtoolkit.localstack.segment-profile-only=$segmentProfileOnlyValue",
+        "-Dtoolkit.localstack.segment-profile-values=$SegmentProfileValues",
         "-Dtoolkit.localstack.page-size=$PageSize",
         "-Dtoolkit.localstack.scan-workers=$ScanWorkers",
         "-Dtoolkit.localstack.scan-segments=$ScanSegments",
@@ -176,7 +192,8 @@ function Invoke-Benchmark {
     $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
     $historyDir = Join-Path $projectRoot ("benchmark-results/localstack/" + $Mode)
     New-Item -ItemType Directory -Force -Path $historyDir | Out-Null
-    $history = Join-Path $historyDir ("$stamp-$($commit.Substring(0,8))-$PrimaryRecords.json")
+    $historyKind = if ($SegmentProfileOnly) { '-segment-profile' } else { '' }
+    $history = Join-Path $historyDir ("$stamp-$($commit.Substring(0,8))-$PrimaryRecords$historyKind.json")
     Copy-Item -LiteralPath $json -Destination $history
     Write-Output "BENCHMARK READY json=$json history=$history"
     } finally {

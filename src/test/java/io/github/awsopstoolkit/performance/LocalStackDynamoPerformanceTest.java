@@ -53,6 +53,19 @@ class LocalStackDynamoPerformanceTest {
                     System.getProperty("toolkit.localstack.write-compatibility", "false"));
     private static final boolean RUN_SWEEPS =
             Boolean.parseBoolean(System.getProperty("toolkit.localstack.run-sweeps", "true"));
+    private static final boolean SEGMENT_PROFILE_ONLY =
+            Boolean.parseBoolean(
+                    System.getProperty("toolkit.localstack.segment-profile-only", "false"));
+    private static final List<Integer> SEGMENT_PROFILE_VALUES =
+            Arrays.stream(
+                            System.getProperty(
+                                            "toolkit.localstack.segment-profile-values",
+                                            "128,256,512")
+                                    .split(","))
+                    .map(String::trim)
+                    .filter(value -> !value.isEmpty())
+                    .map(Integer::parseInt)
+                    .toList();
     private static final int GET_SAMPLES =
             Integer.getInteger("toolkit.localstack.get-samples", 100);
     private static final int PAGE_SIZE = Integer.getInteger("toolkit.localstack.page-size", 5000);
@@ -110,7 +123,11 @@ class LocalStackDynamoPerformanceTest {
 
             var tableResults = new ArrayList<Map<String, Object>>();
             Map<String, Object> primary;
-            if (SCALE_ONLY) {
+            if (SEGMENT_PROFILE_ONLY) {
+                TableProfile profile = PROFILES.getFirst();
+                requirePreparedDataset(dynamo, profile, PRIMARY_RECORDS);
+                primary = segmentProfileBenchmark(dynamo, profile);
+            } else if (SCALE_ONLY) {
                 TableProfile profile = PROFILES.getFirst();
                 requirePreparedDataset(dynamo, profile, PRIMARY_RECORDS);
                 primary = benchmarkScaleTable(dynamo, profile, PRIMARY_RECORDS);
@@ -144,6 +161,8 @@ class LocalStackDynamoPerformanceTest {
             report.put("writeCompatibility", WRITE_COMPATIBILITY);
             report.put("readOnly", !WRITE_COMPATIBILITY);
             report.put("runSweeps", RUN_SWEEPS);
+            report.put("segmentProfileOnly", SEGMENT_PROFILE_ONLY);
+            report.put("segmentProfileValues", SEGMENT_PROFILE_VALUES);
             report.put("getSamples", GET_SAMPLES);
             report.put("datasetPreparedExternally", true);
             report.put("itemShape", ITEM_SHAPE);
@@ -181,6 +200,7 @@ class LocalStackDynamoPerformanceTest {
         assertTrue(PAGE_SIZE >= 1 && PAGE_SIZE <= 10_000);
         assertTrue(SCAN_WORKERS >= 1 && SCAN_WORKERS <= 256);
         assertTrue(SCAN_SEGMENTS >= 1);
+        assertTrue(SEGMENT_PROFILE_VALUES.stream().allMatch(value -> value >= 1 && value <= 1024));
         assertTrue(HTTP_CONNECTIONS >= SCAN_WORKERS);
         assertTrue(HTTP_SOCKET_TIMEOUT_SECONDS > 0);
         assertTrue(API_ATTEMPT_TIMEOUT_SECONDS > HTTP_SOCKET_TIMEOUT_SECONDS);
@@ -371,6 +391,92 @@ class LocalStackDynamoPerformanceTest {
                         conditionalWriteConflictBenchmark(dynamo, profile));
             }
         }
+        return result;
+    }
+
+    private static Map<String, Object> segmentProfileBenchmark(
+            DynamoDbClient dynamo, TableProfile profile) throws Exception {
+        var result = new LinkedHashMap<String, Object>();
+        result.put("table", profile.name());
+        result.put("recordsTarget", PRIMARY_RECORDS);
+        result.put("datasetPreparedExternally", true);
+        result.put("profiledSegment", 0);
+        result.put("pageSize", PAGE_SIZE);
+        var profiles = new ArrayList<Map<String, Object>>();
+        for (int segments : SEGMENT_PROFILE_VALUES) {
+            System.out.printf(
+                    Locale.ROOT,
+                    "SEGMENT_PROFILE start segment=0 totalSegments=%d pageSize=%d%n",
+                    segments,
+                    PAGE_SIZE);
+            profiles.add(singleSegmentProjectionProfile(dynamo, profile.name(), segments));
+        }
+        result.put("singleSegmentProfiles", profiles);
+        return result;
+    }
+
+    private static Map<String, Object> singleSegmentProjectionProfile(
+            DynamoDbClient dynamo, String table, int totalSegments) throws Exception {
+        int profiledSegment = 0;
+        var service =
+                new DynamoDbService(dynamo, new AwsCallGate(1, 1_000_000), (a, r) -> {}, PAGE_SIZE);
+        var resume = new HashMap<Integer, DynamoDbService.SegmentCheckpoint>();
+        for (int segment = 1; segment < totalSegments; segment++) {
+            resume.put(
+                    segment,
+                    new DynamoDbService.SegmentCheckpoint(segment, totalSegments, Map.of(), true));
+        }
+        var bytes = new AtomicLong();
+        long started = System.nanoTime();
+        DynamoDbService.ScanSummary summary =
+                service.parallelScan(
+                        ScanRequest.builder()
+                                .tableName(table)
+                                .limit(PAGE_SIZE)
+                                .projectionExpression(SCALE_PROJECTION)
+                                .expressionAttributeNames(Map.of("#s", "status", "#v", "version"))
+                                .build(),
+                        totalSegments,
+                        1,
+                        Long.MAX_VALUE,
+                        resume,
+                        () -> false,
+                        (segment, page) -> {
+                            if (segment != profiledSegment) {
+                                throw new IllegalStateException(
+                                        "Unexpected profiled segment " + segment);
+                            }
+                            for (var value : page.items()) {
+                                bytes.addAndGet(estimatedBytes(value));
+                            }
+                        },
+                        checkpoint -> {});
+        double seconds = elapsedSeconds(started);
+        var result =
+                metric(
+                        summary.examined(),
+                        summary.returned(),
+                        summary.pages(),
+                        seconds,
+                        bytes.get());
+        result.put("profiledSegment", profiledSegment);
+        result.put("totalSegments", totalSegments);
+        result.put("workers", 1);
+        result.put("pageSize", PAGE_SIZE);
+        result.put(
+                "averageItemsPerPage",
+                summary.pages() == 0 ? 0.0 : (double) summary.examined() / summary.pages());
+        result.put("averageSecondsPerPage", summary.pages() == 0 ? 0.0 : seconds / summary.pages());
+        result.put("projection", "pk,sk,status,version,transactionId,paymentId,accountId,document");
+        System.out.printf(
+                Locale.ROOT,
+                "SEGMENT_PROFILE done segment=%d totalSegments=%d examined=%d pages=%d elapsedSeconds=%.3f itemsPerSecond=%.3f%n",
+                profiledSegment,
+                totalSegments,
+                summary.examined(),
+                summary.pages(),
+                seconds,
+                summary.examined() / seconds);
         return result;
     }
 

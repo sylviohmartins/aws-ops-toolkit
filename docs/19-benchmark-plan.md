@@ -164,6 +164,19 @@ O experimento fresh com **2 workers** finalmente concluiu os 25.000.000 itens em
 
 A comparação direta de throughput com 5M/10M exige ressalva porque 25M usou menos workers. Os baselines fresh de 5M e 10M com 8 workers ficaram em 1.700,55 e 1.654,86 itens/s, respectivamente, enquanto 25M/2w ficou em 968,58 itens/s (cerca de 41,47% abaixo de 10M e 43,04% abaixo de 5M). Essa diferença representa a **configuração prática necessária para completar 25M neste host**, não uma regressão de throughput em condições idênticas. O tempo total do 25M foi ~4,27x o do 10M, apesar de a cardinalidade ser 2,5x maior, refletindo principalmente a redução de concorrência.
 
+### Profiler leve de profundidade de segmentos em 25M
+
+Para testar se o custo do 25M poderia ser reduzido sem elevar novamente a concorrência, o harness recebeu um modo `segment-profile-only`. Ele usa o mesmo `DynamoDbService`, SDK, ProjectionExpression e timeouts do benchmark, mas executa somente o segmento 0 e marca os demais segmentos como concluídos em memória. O artefato `20261005-124712-2c2dbcfe-25000000-segment-profile.json` comparou 128, 256 e 512 segmentos com `pageSize=1000` e um único worker efetivo.
+
+Resultados do segmento 0:
+- **128 segmentos:** 200.000 itens, 241 páginas, 264,98 s, **754,76 itens/s**, ~1,100 s/página;
+- **256 segmentos:** 100.000 itens, 121 páginas, 65,60 s, **1.524,48 itens/s**, ~0,542 s/página;
+- **512 segmentos:** 25.000 itens, 31 páginas, 8,90 s, **2.808,01 itens/s**, ~0,287 s/página.
+
+O resultado reforça a hipótese já observada em 5M: `workers` e `TotalSegments` devem ser tratados de forma independente. Aumentar a quantidade de segmentos reduz a profundidade de cada scan e, neste emulador, derruba fortemente a latência média por página mesmo com concorrência fixa. Assim, o próximo candidato de baseline 25M é **2 workers / 512 segments / pageSize=1000**, não mais workers. Esse full scan só deve ser iniciado quando o host voltar a pelo menos 10 GiB livres.
+
+O script de benchmark também passou a aplicar o gate de **10 GiB livres** antes de qualquer benchmark persistente, e não apenas antes de crescimento do fixture. `-AllowLowDisk` continua disponível como override explícito, mas não deve ser usado para medições longas neste host sem justificativa.
+
 ### Gate de capacidade para 50M, 75M e 100M
 
 Após o fechamento do baseline 25M, o host tinha apenas **~9,07 GiB livres** no único volume disponível (`C:`). O DB live de 25M mede **53.575.275.520 bytes (~49,90 GiB)**, aproximadamente **2.143 bytes por registro**. Mantendo essa densidade, o fixture de 50M projeta ~**99,79 GiB**, o de 75M ~**149,69 GiB** e o de 100M ~**199,58 GiB**.
