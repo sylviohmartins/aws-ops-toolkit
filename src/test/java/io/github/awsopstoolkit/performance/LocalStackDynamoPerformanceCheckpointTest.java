@@ -1,6 +1,7 @@
 package io.github.awsopstoolkit.performance;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -38,6 +39,29 @@ class LocalStackDynamoPerformanceCheckpointTest {
                 () ->
                         LocalStackDynamoPerformanceTest.ensureProjectionCheckpointIdentity(
                                 tempDir, "lab-perf-v3-01-rich-uniform", 512));
+    }
+
+    @Test
+    void aggregatesScanCallLatencyPercentiles() {
+        var metrics =
+                LocalStackDynamoPerformanceTest.scanCallLatencyMetrics(
+                        java.util.List.of(
+                                new LocalStackDynamoPerformanceTest.ScanCallSample(
+                                        1, 10_000_000, 100, 100),
+                                new LocalStackDynamoPerformanceTest.ScanCallSample(
+                                        2, 20_000_000, 100, 100),
+                                new LocalStackDynamoPerformanceTest.ScanCallSample(
+                                        3, 30_000_000, 100, 100),
+                                new LocalStackDynamoPerformanceTest.ScanCallSample(
+                                        4, 40_000_000, 100, 100)));
+
+        assertEquals(4, metrics.get("samples"));
+        assertEquals(25.0, (double) metrics.get("averageMillis"), 0.0001);
+        assertEquals(20.0, (double) metrics.get("p50Millis"), 0.0001);
+        assertEquals(40.0, (double) metrics.get("p95Millis"), 0.0001);
+        assertEquals(40.0, (double) metrics.get("p99Millis"), 0.0001);
+        assertEquals(40.0, (double) metrics.get("maxMillis"), 0.0001);
+        assertEquals(4, metrics.get("slowestSegment"));
     }
 
     @Test

@@ -82,4 +82,43 @@ class DynamoDbCheckpointTest {
                                 checkpoint -> checkpoints.incrementAndGet()));
         assertEquals(0, checkpoints.get());
     }
+
+    @Test
+    void scanObserverReceivesOneSamplePerSuccessfulCall() throws Exception {
+        var calls = new AtomicInteger();
+        var observed = new AtomicInteger();
+        var observedScanned = new AtomicInteger();
+        var key = Map.of("pk", AttributeValue.fromS("cursor"));
+        var service =
+                service(
+                        request -> {
+                            if (calls.getAndIncrement() == 0) {
+                                return ScanResponse.builder()
+                                        .count(1)
+                                        .scannedCount(1)
+                                        .lastEvaluatedKey(key)
+                                        .build();
+                            }
+                            return ScanResponse.builder().count(0).scannedCount(0).build();
+                        });
+
+        service.parallelScan(
+                ScanRequest.builder().tableName("synthetic-table").build(),
+                1,
+                1,
+                10,
+                Map.of(),
+                () -> false,
+                (segment, page) -> {},
+                checkpoint -> {},
+                (segment, latencyNanos, scannedCount, returnedCount) -> {
+                    assertTrue(latencyNanos >= 0);
+                    observed.incrementAndGet();
+                    observedScanned.addAndGet(scannedCount);
+                });
+
+        assertEquals(2, calls.get());
+        assertEquals(2, observed.get());
+        assertEquals(1, observedScanned.get());
+    }
 }

@@ -439,6 +439,7 @@ class LocalStackDynamoPerformanceTest {
                     new DynamoDbService.SegmentCheckpoint(segment, totalSegments, Map.of(), true));
         }
         var bytes = new AtomicLong();
+        var scanCallSamples = new ArrayList<ScanCallSample>();
         long started = System.nanoTime();
         DynamoDbService.ScanSummary summary =
                 service.parallelScan(
@@ -462,7 +463,14 @@ class LocalStackDynamoPerformanceTest {
                                 bytes.addAndGet(estimatedBytes(value));
                             }
                         },
-                        checkpoint -> {});
+                        checkpoint -> {},
+                        (segment, latencyNanos, scannedCount, returnedCount) ->
+                                scanCallSamples.add(
+                                        new ScanCallSample(
+                                                segment,
+                                                latencyNanos,
+                                                scannedCount,
+                                                returnedCount)));
         double seconds = elapsedSeconds(started);
         var result =
                 metric(
@@ -479,6 +487,7 @@ class LocalStackDynamoPerformanceTest {
                 "averageItemsPerPage",
                 summary.pages() == 0 ? 0.0 : (double) summary.examined() / summary.pages());
         result.put("averageSecondsPerPage", summary.pages() == 0 ? 0.0 : seconds / summary.pages());
+        result.put("scanCallLatency", scanCallLatencyMetrics(scanCallSamples));
         result.put("projection", "pk,sk,status,version,transactionId,paymentId,accountId,document");
         System.out.printf(
                 Locale.ROOT,
@@ -686,6 +695,7 @@ class LocalStackDynamoPerformanceTest {
         var attemptExamined = new AtomicLong();
         var storageCancelled = new AtomicBoolean();
         var lastUsableBytes = new AtomicLong(Long.MAX_VALUE);
+        var scanCallSamples = new ConcurrentLinkedQueue<ScanCallSample>();
         long started = System.nanoTime();
         DynamoDbService.ScanSummary summary;
         try {
@@ -752,7 +762,14 @@ class LocalStackDynamoPerformanceTest {
                                                 ignored -> new ProjectionProgress());
                                 saveProjectionCheckpoint(
                                         checkpointRoot, table, checkpoint, segmentProgress);
-                            });
+                            },
+                            (segment, latencyNanos, scannedCount, returnedCount) ->
+                                    scanCallSamples.add(
+                                            new ScanCallSample(
+                                                    segment,
+                                                    latencyNanos,
+                                                    scannedCount,
+                                                    returnedCount)));
         } catch (Exception failure) {
             double attemptSeconds = elapsedSeconds(started);
             saveProjectionRunState(
@@ -825,6 +842,7 @@ class LocalStackDynamoPerformanceTest {
         result.put("checkpointConfigVersion", PROJECTION_CHECKPOINT_SCHEMA_VERSION);
         result.put("benchmarkMinFreeBytes", BENCHMARK_MIN_FREE_BYTES);
         result.put("storageCheckEveryPages", STORAGE_CHECK_EVERY_PAGES);
+        result.put("scanCallLatency", scanCallLatencyMetrics(scanCallSamples));
         result.put("resumedSegments", resume.size());
         long resumedCompletedSegments =
                 resume.values().stream()
@@ -860,6 +878,42 @@ class LocalStackDynamoPerformanceTest {
                                 + PAGE_SIZE
                                 + "-cfg-v"
                                 + PROJECTION_CHECKPOINT_SCHEMA_VERSION);
+    }
+
+    static Map<String, Object> scanCallLatencyMetrics(Collection<ScanCallSample> samples) {
+        List<ScanCallSample> snapshot = List.copyOf(samples);
+        var result = new LinkedHashMap<String, Object>();
+        result.put("samples", snapshot.size());
+        if (snapshot.isEmpty()) {
+            return result;
+        }
+
+        long[] sorted =
+                snapshot.stream().mapToLong(ScanCallSample::latencyNanos).sorted().toArray();
+        ScanCallSample slowest =
+                snapshot.stream()
+                        .max(Comparator.comparingLong(ScanCallSample::latencyNanos))
+                        .orElseThrow();
+        result.put("averageMillis", Arrays.stream(sorted).average().orElseThrow() / 1_000_000.0);
+        result.put("p50Millis", percentileMillis(sorted, 0.50));
+        result.put("p95Millis", percentileMillis(sorted, 0.95));
+        result.put("p99Millis", percentileMillis(sorted, 0.99));
+        result.put("maxMillis", sorted[sorted.length - 1] / 1_000_000.0);
+        result.put("slowestSegment", slowest.segment());
+        result.put("slowestScannedCount", slowest.scannedCount());
+        result.put("slowestReturnedCount", slowest.returnedCount());
+        return result;
+    }
+
+    private static double percentileMillis(long[] sortedNanos, double percentile) {
+        if (sortedNanos.length == 0 || percentile <= 0 || percentile > 1) {
+            throw new IllegalArgumentException("Invalid percentile input");
+        }
+        int index =
+                Math.min(
+                        sortedNanos.length - 1,
+                        (int) Math.ceil(percentile * sortedNanos.length) - 1);
+        return sortedNanos[index] / 1_000_000.0;
     }
 
     static boolean shouldCancelForLowDisk(long usableBytes, long reserveBytes) {
@@ -1385,6 +1439,8 @@ class LocalStackDynamoPerformanceTest {
             return completed;
         }
     }
+
+    record ScanCallSample(int segment, long latencyNanos, int scannedCount, int returnedCount) {}
 
     private record ProjectionCheckpointIdentity(
             int schemaVersion,
