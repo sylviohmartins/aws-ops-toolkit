@@ -54,6 +54,9 @@ class LocalStackDynamoPerformanceTest {
                     System.getProperty("toolkit.localstack.write-compatibility", "false"));
     private static final boolean RUN_SWEEPS =
             Boolean.parseBoolean(System.getProperty("toolkit.localstack.run-sweeps", "true"));
+    private static final boolean TARGETED_READ_PROFILE_ONLY =
+            Boolean.parseBoolean(
+                    System.getProperty("toolkit.localstack.targeted-read-profile-only", "false"));
     private static final boolean SEGMENT_PROFILE_ONLY =
             Boolean.parseBoolean(
                     System.getProperty("toolkit.localstack.segment-profile-only", "false"));
@@ -135,7 +138,11 @@ class LocalStackDynamoPerformanceTest {
 
             var tableResults = new ArrayList<Map<String, Object>>();
             Map<String, Object> primary;
-            if (SEGMENT_PROFILE_ONLY) {
+            if (TARGETED_READ_PROFILE_ONLY) {
+                TableProfile profile = PROFILES.getFirst();
+                requirePreparedDataset(dynamo, profile, PRIMARY_RECORDS);
+                primary = targetedReadProfileBenchmark(dynamo, profile, PRIMARY_RECORDS);
+            } else if (SEGMENT_PROFILE_ONLY) {
                 TableProfile profile = PROFILES.getFirst();
                 requirePreparedDataset(dynamo, profile, PRIMARY_RECORDS);
                 primary = segmentProfileBenchmark(dynamo, profile);
@@ -173,6 +180,7 @@ class LocalStackDynamoPerformanceTest {
             report.put("writeCompatibility", WRITE_COMPATIBILITY);
             report.put("readOnly", !WRITE_COMPATIBILITY);
             report.put("runSweeps", RUN_SWEEPS);
+            report.put("targetedReadProfileOnly", TARGETED_READ_PROFILE_ONLY);
             report.put("segmentProfileOnly", SEGMENT_PROFILE_ONLY);
             report.put("segmentProfileValues", SEGMENT_PROFILE_VALUES);
             report.put("getSamples", GET_SAMPLES);
@@ -224,6 +232,8 @@ class LocalStackDynamoPerformanceTest {
         assertTrue(RETRY_MAX_ATTEMPTS >= 1 && RETRY_MAX_ATTEMPTS <= 10);
         assertTrue(BENCHMARK_MIN_FREE_BYTES >= 0);
         assertTrue(STORAGE_CHECK_EVERY_PAGES >= 1);
+        assertTrue(!(TARGETED_READ_PROFILE_ONLY && SEGMENT_PROFILE_ONLY));
+        assertTrue(!(TARGETED_READ_PROFILE_ONLY && WRITE_COMPATIBILITY));
         String host = ENDPOINT.getHost();
         assertTrue(
                 "http".equals(ENDPOINT.getScheme())
@@ -412,6 +422,135 @@ class LocalStackDynamoPerformanceTest {
         return result;
     }
 
+    private static Map<String, Object> targetedReadProfileBenchmark(
+            DynamoDbClient dynamo, TableProfile profile, int records) {
+        var result = new LinkedHashMap<String, Object>();
+        result.put("table", profile.name());
+        result.put("recordsTarget", records);
+        result.put("datasetPreparedExternally", true);
+        result.put("readOnly", true);
+        result.put("includesScan", false);
+        result.put("partitionKey", "tenant-00000");
+        result.put("projection", "pk,sk,status,version");
+
+        Map<String, Object> getItem = getBenchmark(dynamo, profile, records);
+        Map<String, Object> batchGet = batchGetBenchmark(dynamo, profile, records);
+
+        queryBenchmark(dynamo, profile);
+        partiqlBenchmark(dynamo, profile);
+
+        Map<String, Object> queryFirst = queryBenchmark(dynamo, profile);
+        Map<String, Object> partiqlSecond = partiqlBenchmark(dynamo, profile);
+        Map<String, Object> partiqlFirst = partiqlBenchmark(dynamo, profile);
+        Map<String, Object> querySecond = queryBenchmark(dynamo, profile);
+
+        List<Map<String, Object>> queryRuns = List.of(queryFirst, querySecond);
+        List<Map<String, Object>> partiqlRuns = List.of(partiqlSecond, partiqlFirst);
+        validateTargetedReadParity(queryRuns, partiqlRuns);
+
+        Map<String, Object> query = summarizeTargetedReadRuns(queryRuns);
+        Map<String, Object> partiql = summarizeTargetedReadRuns(partiqlRuns);
+        double querySeconds = ((Number) query.get("totalElapsedSeconds")).doubleValue();
+        double partiqlSeconds = ((Number) partiql.get("totalElapsedSeconds")).doubleValue();
+        boolean capacityComparable =
+                Boolean.TRUE.equals(query.get("consumedCapacityReportedAll"))
+                        && Boolean.TRUE.equals(partiql.get("consumedCapacityReportedAll"));
+
+        result.put("getItem", getItem);
+        result.put("batchGet", batchGet);
+        result.put("warmupOrder", List.of("QUERY", "PARTIQL"));
+        result.put("measurementOrder", List.of("QUERY", "PARTIQL", "PARTIQL", "QUERY"));
+        result.put("query", query);
+        result.put("partiql", partiql);
+        result.put("queryPartiqlComparison", "ORDER_BALANCED_MATCHED_PARTITION_KEY_AND_PROJECTION");
+        result.put("queryPartiqlReturnedParity", true);
+        result.put("queryPartiqlBytesParity", true);
+        result.put("queryPartiqlConsumedCapacityComparable", capacityComparable);
+        result.put(
+                "partiqlToQueryBalancedElapsedRatio",
+                querySeconds == 0.0 ? null : partiqlSeconds / querySeconds);
+        return result;
+    }
+
+    static void validateTargetedReadParity(
+            List<Map<String, Object>> queryRuns, List<Map<String, Object>> partiqlRuns) {
+        if (queryRuns.isEmpty() || partiqlRuns.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "Targeted read comparison requires both Query and PartiQL runs");
+        }
+        long expectedReturned = ((Number) queryRuns.getFirst().get("returned")).longValue();
+        long expectedBytes = ((Number) queryRuns.getFirst().get("bytesRead")).longValue();
+
+        var allRuns = new ArrayList<Map<String, Object>>(queryRuns.size() + partiqlRuns.size());
+        allRuns.addAll(queryRuns);
+        allRuns.addAll(partiqlRuns);
+        for (Map<String, Object> run : allRuns) {
+            long returned = ((Number) run.get("returned")).longValue();
+            long bytes = ((Number) run.get("bytesRead")).longValue();
+            if (returned != expectedReturned || bytes != expectedBytes) {
+                throw new IllegalStateException(
+                        "Query/PartiQL partition-key parity mismatch: expectedReturned="
+                                + expectedReturned
+                                + " actualReturned="
+                                + returned
+                                + " expectedBytes="
+                                + expectedBytes
+                                + " actualBytes="
+                                + bytes);
+            }
+        }
+    }
+
+    static Map<String, Object> summarizeTargetedReadRuns(List<Map<String, Object>> runs) {
+        if (runs.isEmpty()) {
+            throw new IllegalArgumentException("Targeted read summary requires at least one run");
+        }
+        Map<String, Object> first = runs.getFirst();
+        long returnedPerRun = ((Number) first.get("returned")).longValue();
+        long bytesPerRun = ((Number) first.get("bytesRead")).longValue();
+        long totalRequests =
+                runs.stream().mapToLong(run -> ((Number) run.get("requests")).longValue()).sum();
+        double totalElapsedSeconds =
+                runs.stream()
+                        .mapToDouble(run -> ((Number) run.get("elapsedSeconds")).doubleValue())
+                        .sum();
+        double totalConsumedCapacityUnits =
+                runs.stream()
+                        .mapToDouble(
+                                run -> ((Number) run.get("consumedCapacityUnits")).doubleValue())
+                        .sum();
+        boolean capacityReportedAll =
+                runs.stream()
+                        .allMatch(run -> Boolean.TRUE.equals(run.get("consumedCapacityReported")));
+
+        var result = new LinkedHashMap<String, Object>();
+        result.put("accessPattern", first.get("accessPattern"));
+        result.put("semanticClass", first.get("semanticClass"));
+        result.put("partitionKey", first.get("partitionKey"));
+        result.put("projection", first.get("projection"));
+        result.put("scannedSemantics", first.get("scannedSemantics"));
+        result.put("runs", runs.size());
+        result.put("returnedPerRun", returnedPerRun);
+        result.put("bytesReadPerRun", bytesPerRun);
+        result.put("totalRequests", totalRequests);
+        result.put("averageRequestsPerRun", (double) totalRequests / runs.size());
+        result.put("totalElapsedSeconds", totalElapsedSeconds);
+        result.put("averageElapsedSeconds", totalElapsedSeconds / runs.size());
+        result.put(
+                "effectiveReturnedPerSecond",
+                returnedPerRun * (double) runs.size() / totalElapsedSeconds);
+        result.put(
+                "effectiveMegabytesPerSecond",
+                bytesPerRun * (double) runs.size() / 1_048_576.0 / totalElapsedSeconds);
+        result.put("consumedCapacityReportedAll", capacityReportedAll);
+        result.put("totalConsumedCapacityUnits", totalConsumedCapacityUnits);
+        result.put(
+                "averageConsumedCapacityUnitsPerRun",
+                capacityReportedAll ? totalConsumedCapacityUnits / runs.size() : null);
+        result.put("runsDetail", runs);
+        return result;
+    }
+
     private static Map<String, Object> segmentProfileBenchmark(
             DynamoDbClient dynamo, TableProfile profile) throws Exception {
         var result = new LinkedHashMap<String, Object>();
@@ -512,6 +651,8 @@ class LocalStackDynamoPerformanceTest {
         int calls = Math.min(GET_SAMPLES, records);
         long started = System.nanoTime();
         long found = 0;
+        double consumedCapacityUnits = 0.0;
+        boolean capacityReported = false;
         for (int i = 0; i < calls; i++) {
             long sequence = (long) i * records / calls;
             var response =
@@ -519,11 +660,20 @@ class LocalStackDynamoPerformanceTest {
                             b ->
                                     b.tableName(profile.name())
                                             .key(key(profile, sequence))
-                                            .consistentRead(false));
+                                            .consistentRead(false)
+                                            .returnConsumedCapacity(ReturnConsumedCapacity.TOTAL));
             if (response.hasItem()) found++;
+            if (response.consumedCapacity() != null) {
+                capacityReported = true;
+                consumedCapacityUnits += capacityUnits(response.consumedCapacity());
+            }
         }
         double seconds = elapsedSeconds(started);
-        return metric(calls, found, calls, seconds, 0);
+        var result = metric(calls, found, calls, seconds, 0);
+        result.put("accessPattern", "PRIMARY_KEY_POINT_LOOKUP");
+        result.put("consumedCapacityReported", capacityReported);
+        result.put("consumedCapacityUnits", consumedCapacityUnits);
+        return result;
     }
 
     private static Map<String, Object> batchGetBenchmark(
@@ -539,18 +689,36 @@ class LocalStackDynamoPerformanceTest {
                 dynamo.batchGetItem(
                         b ->
                                 b.requestItems(
-                                        Map.of(
-                                                profile.name(),
-                                                KeysAndAttributes.builder().keys(keys).build())));
+                                                Map.of(
+                                                        profile.name(),
+                                                        KeysAndAttributes.builder()
+                                                                .keys(keys)
+                                                                .build()))
+                                        .returnConsumedCapacity(ReturnConsumedCapacity.TOTAL));
         double seconds = elapsedSeconds(started);
         int returned = response.responses().getOrDefault(profile.name(), List.of()).size();
-        return metric(count, returned, 1, seconds, 0);
+        List<ConsumedCapacity> consumed = response.consumedCapacity();
+        var result = metric(count, returned, 1, seconds, 0);
+        result.put("accessPattern", "PRIMARY_KEYS_BATCH_LOOKUP");
+        result.put("consumedCapacityReported", consumed != null && !consumed.isEmpty());
+        result.put(
+                "consumedCapacityUnits",
+                consumed == null
+                        ? 0.0
+                        : consumed.stream()
+                                .mapToDouble(LocalStackDynamoPerformanceTest::capacityUnits)
+                                .sum());
+        return result;
     }
 
     private static Map<String, Object> queryBenchmark(DynamoDbClient dynamo, TableProfile profile) {
         long started = System.nanoTime();
+        long scanned = 0;
         long returned = 0;
         long pages = 0;
+        long bytes = 0;
+        double consumedCapacityUnits = 0.0;
+        boolean capacityReported = false;
         Map<String, AttributeValue> cursor = Map.of();
         do {
             Map<String, AttributeValue> startKey = cursor;
@@ -559,17 +727,38 @@ class LocalStackDynamoPerformanceTest {
                             b ->
                                     b.tableName(profile.name())
                                             .keyConditionExpression("#pk = :pk")
-                                            .expressionAttributeNames(Map.of("#pk", "pk"))
+                                            .projectionExpression("pk,sk,#s,#v")
+                                            .expressionAttributeNames(
+                                                    Map.of(
+                                                            "#pk", "pk",
+                                                            "#s", "status",
+                                                            "#v", "version"))
                                             .expressionAttributeValues(
                                                     Map.of(":pk", s("tenant-00000")))
                                             .exclusiveStartKey(startKey.isEmpty() ? null : startKey)
-                                            .limit(PAGE_SIZE));
+                                            .limit(PAGE_SIZE)
+                                            .consistentRead(false)
+                                            .returnConsumedCapacity(ReturnConsumedCapacity.TOTAL));
+            scanned += response.scannedCount();
             returned += response.count();
+            for (var item : response.items()) bytes += estimatedBytes(item);
+            if (response.consumedCapacity() != null) {
+                capacityReported = true;
+                consumedCapacityUnits += capacityUnits(response.consumedCapacity());
+            }
             pages++;
             cursor = response.lastEvaluatedKey();
         } while (!cursor.isEmpty());
         double seconds = elapsedSeconds(started);
-        return metric(returned, returned, pages, seconds, 0);
+        var result = metric(scanned, returned, pages, seconds, bytes);
+        result.put("accessPattern", "PARTITION_KEY_QUERY");
+        result.put("semanticClass", "PARTITION_KEY_EQ");
+        result.put("partitionKey", "tenant-00000");
+        result.put("projection", "pk,sk,status,version");
+        result.put("scannedSemantics", "AWS_RESPONSE_SCANNED_COUNT");
+        result.put("consumedCapacityReported", capacityReported);
+        result.put("consumedCapacityUnits", consumedCapacityUnits);
+        return result;
     }
 
     private static Map<String, Object> partiqlBenchmark(
@@ -577,6 +766,9 @@ class LocalStackDynamoPerformanceTest {
         long started = System.nanoTime();
         long returned = 0;
         long pages = 0;
+        long bytes = 0;
+        double consumedCapacityUnits = 0.0;
+        boolean capacityReported = false;
         String nextToken = null;
         do {
             ExecuteStatementResponse response =
@@ -589,13 +781,28 @@ class LocalStackDynamoPerformanceTest {
                                     .parameters(s("tenant-00000"))
                                     .nextToken(nextToken)
                                     .limit(PAGE_SIZE)
+                                    .consistentRead(false)
+                                    .returnConsumedCapacity(ReturnConsumedCapacity.TOTAL)
                                     .build());
             returned += response.items().size();
+            for (var item : response.items()) bytes += estimatedBytes(item);
+            if (response.consumedCapacity() != null) {
+                capacityReported = true;
+                consumedCapacityUnits += capacityUnits(response.consumedCapacity());
+            }
             pages++;
             nextToken = response.nextToken();
         } while (nextToken != null && !nextToken.isBlank());
         double seconds = elapsedSeconds(started);
-        return metric(returned, returned, pages, seconds, 0);
+        var result = metric(returned, returned, pages, seconds, bytes);
+        result.put("accessPattern", "PARTIQL_PARTITION_KEY_SELECT");
+        result.put("semanticClass", "PARTITION_KEY_EQ");
+        result.put("partitionKey", "tenant-00000");
+        result.put("projection", "pk,sk,status,version");
+        result.put("scannedSemantics", "INFERRED_NO_FILTER_RETURNED");
+        result.put("consumedCapacityReported", capacityReported);
+        result.put("consumedCapacityUnits", consumedCapacityUnits);
+        return result;
     }
 
     private static Map<String, Object> scan(
@@ -1329,6 +1536,13 @@ class LocalStackDynamoPerformanceTest {
         return Map.of(
                 "pk", s(tenant(profile, sequence)),
                 "sk", s(String.format(Locale.ROOT, "record-%012d", sequence)));
+    }
+
+    private static double capacityUnits(ConsumedCapacity capacity) {
+        if (capacity == null || capacity.capacityUnits() == null) {
+            return 0.0;
+        }
+        return capacity.capacityUnits();
     }
 
     private static Map<String, Object> metric(

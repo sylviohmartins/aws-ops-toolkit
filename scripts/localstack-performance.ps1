@@ -24,6 +24,7 @@ param(
     [switch]$FreshProjection,
     [switch]$WriteCompatibility,
     [switch]$SkipSweeps,
+    [switch]$TargetedReadProfileOnly,
     [switch]$SegmentProfileOnly,
     [ValidatePattern('^\d+(,\d+)*$')][string]$SegmentProfileValues = '128,256,512'
 )
@@ -31,6 +32,12 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 if ($BaselineRecords -lt 1) { throw 'BaselineRecords must be >= 1.' }
 if ($PrimaryRecords -lt $BaselineRecords) { throw 'PrimaryRecords must be >= BaselineRecords.' }
+if ($TargetedReadProfileOnly -and $SegmentProfileOnly) {
+    throw 'TargetedReadProfileOnly and SegmentProfileOnly are mutually exclusive.'
+}
+if ($TargetedReadProfileOnly -and $WriteCompatibility) {
+    throw 'TargetedReadProfileOnly is strictly read-only and cannot use WriteCompatibility.'
+}
 if (!$env:JAVA_HOME -and $Action -in @('benchmark','run')) {
     throw 'Set JAVA_HOME to JDK 25 before benchmarking.'
 }
@@ -159,6 +166,7 @@ function Invoke-Benchmark {
     $projectionOnlyValue = if ($ProjectionOnly) { 'true' } else { 'false' }
     $writeCompatibilityValue = if ($WriteCompatibility) { 'true' } else { 'false' }
     $runSweepsValue = if ($SkipSweeps) { 'false' } else { 'true' }
+    $targetedReadProfileOnlyValue = if ($TargetedReadProfileOnly) { 'true' } else { 'false' }
     $segmentProfileOnlyValue = if ($SegmentProfileOnly) { 'true' } else { 'false' }
     $minFreeBytes = if ($AllowLowDisk -or $memory) { 0 } else { 10GB }
     $mvnArgs = @(
@@ -174,6 +182,7 @@ function Invoke-Benchmark {
         "-Dtoolkit.localstack.projection-only=$projectionOnlyValue",
         "-Dtoolkit.localstack.write-compatibility=$writeCompatibilityValue",
         "-Dtoolkit.localstack.run-sweeps=$runSweepsValue",
+        "-Dtoolkit.localstack.targeted-read-profile-only=$targetedReadProfileOnlyValue",
         "-Dtoolkit.localstack.segment-profile-only=$segmentProfileOnlyValue",
         "-Dtoolkit.localstack.segment-profile-values=$SegmentProfileValues",
         "-Dtoolkit.localstack.page-size=$PageSize",
@@ -201,7 +210,13 @@ function Invoke-Benchmark {
     $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
     $historyDir = Join-Path $projectRoot ("benchmark-results/localstack/" + $Mode)
     New-Item -ItemType Directory -Force -Path $historyDir | Out-Null
-    $historyKind = if ($SegmentProfileOnly) { '-segment-profile' } else { '' }
+    $historyKind = if ($SegmentProfileOnly) {
+        '-segment-profile'
+    } elseif ($TargetedReadProfileOnly) {
+        '-targeted-read-profile'
+    } else {
+        ''
+    }
     $dirtyKind = if ($benchmarkDirty) { '-dirty' } else { '' }
     $history = Join-Path $historyDir ("$stamp-$($benchmarkCommit.Substring(0,8))$dirtyKind-$PrimaryRecords$historyKind.json")
     Copy-Item -LiteralPath $json -Destination $history

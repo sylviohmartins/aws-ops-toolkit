@@ -187,6 +187,16 @@ Os checkpoints novos também passaram a usar uma identidade versionada. O diret�
 
 A proveniência do benchmark também passou a ser capturada no **início** da execução. O script resolve `git rev-parse HEAD` e `git status --porcelain` antes do Maven, grava `gitCommit` e `gitDirty` no JSON e usa o mesmo commit pré-execução no filename histórico; resultados com alterações locais recebem o sufixo `-dirty`. O perfil curto `20261006-020837-3cac0516-25000000-segment-profile.json` validou a trilha limpa de ponta a ponta: `gitCommit=3cac05161644cd7bf7d3163fb94ba8b6fbad6e3d`, `gitDirty=false`, e o filename usa o mesmo hash curto sem marcador dirty.
 
+### Perfil targeted de GetItem, BatchGet, Query e PartiQL
+
+O laboratório agora oferece `-TargetedReadProfileOnly` para comparar apenas access patterns endereçáveis na tabela principal, sem executar `Scan` ou `Parallel Scan`. O modo é estritamente read-only e rejeita `-WriteCompatibility`. Ele mede `GetItem`, `BatchGetItem`, `Query` por partition key e PartiQL `SELECT ... WHERE pk=?`.
+
+A comparação direta Query × PartiQL usa a mesma partition key (`tenant-00000`), a mesma projeção (`pk,sk,status,version`), consistência eventual explícita e `pageSize` comum. O harness valida paridade de cardinalidade e de bytes projetados; qualquer diferença encerra a execução. Como o backing store local demonstrou alta sensibilidade a cache, a medição descarta um warmup de cada caminho e usa ordem balanceada `Query -> PartiQL -> PartiQL -> Query`; o ratio final usa a soma das duas execuções medidas de cada API.
+
+`ReturnConsumedCapacity=TOTAL` é solicitado sempre que suportado. A comparação de capacidade só é marcada como válida quando **todas** as execuções dos dois caminhos retornam essa informação. Em validação preliminar no LocalStack 4.14.0, `Query` reportou capacidade, enquanto `ExecuteStatement`/PartiQL não reportou; por isso capacidade não deve ser inferida ou preenchida artificialmente para PartiQL.
+
+O único histórico anterior que continha Query e PartiQL, `20260923-111351-c5449f63-10000.json`, **não deve ser usado para comparar desempenho relativo entre essas duas APIs**: naquela versão, `Query` retornava o item completo enquanto PartiQL projetava somente quatro atributos. O artefato permanece válido como evidência histórica de execução, mas não como benchmark equivalente Query × PartiQL.
+
 ### Diagnóstico read-only do backing store SQLite
 
 O laboratório passou a oferecer `scripts/profile-localstack-sqlite.ps1` + `lab/profile_dynamodb_sqlite.py` exclusivamente para diagnosticar o backing store do DynamoDB Local. O wrapper monta o volume Docker como `:ro`, executa o container com filesystem read-only e rede desativada, ativa `PRAGMA query_only=ON`, registra proveniência Git e salva o resultado em `benchmark-results/localstack/sqlite-diagnostics`. O artefato declara explicitamente `managedDynamoDbEquivalent=false`: esse caminho **não é uma alternativa operacional ao DynamoDB gerenciado** e não deve ser incorporado ao runtime do toolkit.

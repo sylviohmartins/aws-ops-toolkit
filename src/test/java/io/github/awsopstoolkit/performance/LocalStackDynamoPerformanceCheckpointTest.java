@@ -113,6 +113,37 @@ class LocalStackDynamoPerformanceCheckpointTest {
     }
 
     @Test
+    void summarizesBalancedTargetedReadRuns() {
+        var first = targetedReadRun(25_000, 1_350_000, 30, 10.0, true, 100.0);
+        var second = targetedReadRun(25_000, 1_350_000, 30, 14.0, true, 100.0);
+
+        var summary =
+                LocalStackDynamoPerformanceTest.summarizeTargetedReadRuns(
+                        java.util.List.of(first, second));
+
+        assertEquals(2, summary.get("runs"));
+        assertEquals(25_000L, summary.get("returnedPerRun"));
+        assertEquals(1_350_000L, summary.get("bytesReadPerRun"));
+        assertEquals(60L, summary.get("totalRequests"));
+        assertEquals(24.0, (double) summary.get("totalElapsedSeconds"), 0.0001);
+        assertEquals(12.0, (double) summary.get("averageElapsedSeconds"), 0.0001);
+        assertEquals(true, summary.get("consumedCapacityReportedAll"));
+        assertEquals(200.0, (double) summary.get("totalConsumedCapacityUnits"), 0.0001);
+    }
+
+    @Test
+    void rejectsTargetedReadParityMismatch() {
+        var query = targetedReadRun(25_000, 1_350_000, 30, 10.0, true, 100.0);
+        var partiql = targetedReadRun(24_999, 1_350_000, 30, 10.0, false, 0.0);
+
+        assertThrows(
+                IllegalStateException.class,
+                () ->
+                        LocalStackDynamoPerformanceTest.validateTargetedReadParity(
+                                java.util.List.of(query), java.util.List.of(partiql)));
+    }
+
+    @Test
     void rejectsIncompatibleIdentityManifest() throws Exception {
         Files.createDirectories(tempDir);
         LocalStackDynamoPerformanceTest.ensureProjectionCheckpointIdentity(
@@ -130,5 +161,27 @@ class LocalStackDynamoPerformanceCheckpointTest {
                 () ->
                         LocalStackDynamoPerformanceTest.ensureProjectionCheckpointIdentity(
                                 tempDir, "lab-perf-v3-01-rich-uniform", 512));
+    }
+
+    private static java.util.Map<String, Object> targetedReadRun(
+            long returned,
+            long bytesRead,
+            long requests,
+            double elapsedSeconds,
+            boolean capacityReported,
+            double consumedCapacityUnits) {
+        var run = new java.util.LinkedHashMap<String, Object>();
+        run.put("accessPattern", "PARTITION_KEY_QUERY");
+        run.put("semanticClass", "PARTITION_KEY_EQ");
+        run.put("partitionKey", "tenant-00000");
+        run.put("projection", "pk,sk,status,version");
+        run.put("scannedSemantics", "AWS_RESPONSE_SCANNED_COUNT");
+        run.put("returned", returned);
+        run.put("bytesRead", bytesRead);
+        run.put("requests", requests);
+        run.put("elapsedSeconds", elapsedSeconds);
+        run.put("consumedCapacityReported", capacityReported);
+        run.put("consumedCapacityUnits", consumedCapacityUnits);
+        return run;
     }
 }
