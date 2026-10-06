@@ -690,7 +690,8 @@ class LocalStackDynamoPerformanceTest {
         var progress = new ConcurrentHashMap<Integer, ProjectionProgress>();
         Map<Integer, DynamoDbService.SegmentCheckpoint> resume =
                 loadProjectionCheckpoints(checkpointRoot, table, segments, progress);
-        ProjectionRunState priorRunState = loadProjectionRunState(checkpointRoot);
+        ProjectionRunStateLoad priorRunStateLoad = loadProjectionRunState(checkpointRoot);
+        ProjectionRunState priorRunState = priorRunStateLoad.state();
         var attemptPages = new AtomicLong();
         var attemptExamined = new AtomicLong();
         var storageCancelled = new AtomicBoolean();
@@ -813,7 +814,9 @@ class LocalStackDynamoPerformanceTest {
                             + PRIMARY_RECORDS);
         }
 
-        boolean elapsedHistoryComplete = resume.isEmpty() || priorRunState.attempts() > 0;
+        boolean elapsedHistoryComplete =
+                (resume.isEmpty() || priorRunState.attempts() > 0)
+                        && priorRunStateLoad.historyComplete();
         Map<String, Object> result;
         if (elapsedHistoryComplete) {
             result =
@@ -850,12 +853,21 @@ class LocalStackDynamoPerformanceTest {
                         .count();
         result.put("resumedCompletedSegments", resumedCompletedSegments);
         result.put("checkpointMode", resume.isEmpty() ? "FRESH" : "RESUMED");
-        result.put(
-                "elapsedSemantics",
-                elapsedHistoryComplete
-                        ? "ACCUMULATED_ACROSS_CHECKPOINT_ATTEMPTS"
-                        : "UNAVAILABLE_BEFORE_CURRENT_ATTEMPT_LEGACY_CHECKPOINTS");
+        String elapsedSemantics;
+        if (elapsedHistoryComplete) {
+            elapsedSemantics = "ACCUMULATED_ACROSS_CHECKPOINT_ATTEMPTS";
+        } else if ("BACKUP".equals(priorRunStateLoad.source())) {
+            elapsedSemantics =
+                    "KNOWN_ACCUMULATED_ELAPSED_RECOVERED_FROM_BACKUP_HISTORY_MAY_BE_INCOMPLETE";
+        } else if ("LOST".equals(priorRunStateLoad.source())) {
+            elapsedSemantics = "RUN_STATE_LOST_BEFORE_CURRENT_ATTEMPT";
+        } else {
+            elapsedSemantics = "UNAVAILABLE_BEFORE_CURRENT_ATTEMPT_LEGACY_CHECKPOINTS";
+        }
+        result.put("elapsedSemantics", elapsedSemantics);
         result.put("elapsedHistoryComplete", elapsedHistoryComplete);
+        result.put("knownAccumulatedElapsedSeconds", finalRunState.accumulatedElapsedSeconds());
+        result.put("runStateRecoverySource", priorRunStateLoad.source());
         result.put("attempts", finalRunState.attempts());
         result.put("lastAttemptElapsedSeconds", attemptSeconds);
         result.put("lastAttemptPages", summary.pages());
@@ -953,7 +965,9 @@ class LocalStackDynamoPerformanceTest {
                     entries.anyMatch(
                             entry -> {
                                 String name = entry.getFileName().toString();
-                                return name.startsWith("segment-") || name.equals("run-state.json");
+                                return name.startsWith("segment-")
+                                        || name.equals("run-state.json")
+                                        || name.equals("run-state.backup.json");
                             });
         }
         if (hasLegacyState) {
@@ -1029,15 +1043,51 @@ class LocalStackDynamoPerformanceTest {
         writeJsonAtomically(path, saved);
     }
 
-    private static ProjectionRunState loadProjectionRunState(Path root) throws Exception {
-        Path path = root.resolve("run-state.json");
-        if (!Files.exists(path)) return new ProjectionRunState(0, 0);
+    static ProjectionRunStateLoad loadProjectionRunState(Path root) throws Exception {
+        Path primary = root.resolve("run-state.json");
+        Path backup = root.resolve("run-state.backup.json");
+        boolean primaryExisted = Files.exists(primary);
+        boolean backupExisted = Files.exists(backup);
+
+        ProjectionRunState primaryState = readProjectionRunState(primary);
+        ProjectionRunState backupState = readProjectionRunState(backup);
+
+        if (primaryState == null && backupState == null) {
+            boolean historyComplete = !primaryExisted && !backupExisted;
+            return new ProjectionRunStateLoad(
+                    new ProjectionRunState(0, 0),
+                    historyComplete ? "NONE" : "LOST",
+                    historyComplete);
+        }
+        if (primaryState == null) {
+            return new ProjectionRunStateLoad(backupState, "BACKUP", false);
+        }
+        if (backupState == null) {
+            return new ProjectionRunStateLoad(primaryState, "PRIMARY", true);
+        }
+
+        int comparison = compareProjectionRunStates(primaryState, backupState);
+        if (comparison >= 0) {
+            return new ProjectionRunStateLoad(primaryState, "PRIMARY", true);
+        }
+        return new ProjectionRunStateLoad(backupState, "BACKUP", false);
+    }
+
+    private static ProjectionRunState readProjectionRunState(Path path) throws Exception {
+        if (!Files.exists(path)) return null;
         try {
             return JSON.readValue(path.toFile(), ProjectionRunState.class);
         } catch (Exception failure) {
             quarantineCorruptProjectionState(path, failure);
-            return new ProjectionRunState(0, 0);
+            return null;
         }
+    }
+
+    private static int compareProjectionRunStates(
+            ProjectionRunState left, ProjectionRunState right) {
+        int attempts = Integer.compare(left.attempts(), right.attempts());
+        if (attempts != 0) return attempts;
+        return Double.compare(left.accumulatedElapsedSeconds(), right.accumulatedElapsedSeconds());
     }
 
     private static void quarantineCorruptProjectionState(Path path, Exception failure)
@@ -1056,8 +1106,8 @@ class LocalStackDynamoPerformanceTest {
                 failure.getMessage());
     }
 
-    private static void saveProjectionRunState(Path root, ProjectionRunState state)
-            throws Exception {
+    static void saveProjectionRunState(Path root, ProjectionRunState state) throws Exception {
+        writeJsonAtomically(root.resolve("run-state.backup.json"), state);
         writeJsonAtomically(root.resolve("run-state.json"), state);
     }
 
@@ -1464,7 +1514,10 @@ class LocalStackDynamoPerformanceTest {
             long returned,
             long bytes) {}
 
-    private record ProjectionRunState(int attempts, double accumulatedElapsedSeconds) {}
+    record ProjectionRunState(int attempts, double accumulatedElapsedSeconds) {}
+
+    record ProjectionRunStateLoad(
+            ProjectionRunState state, String source, boolean historyComplete) {}
 
     private record TableProfile(String name, int payloadBytes, boolean skewed, int tenants) {}
 

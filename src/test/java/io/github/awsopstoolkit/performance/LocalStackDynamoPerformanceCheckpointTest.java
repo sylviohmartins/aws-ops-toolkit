@@ -65,6 +65,42 @@ class LocalStackDynamoPerformanceCheckpointTest {
     }
 
     @Test
+    void persistsRedundantRunStateAndLoadsPrimary() throws Exception {
+        var state = new LocalStackDynamoPerformanceTest.ProjectionRunState(2, 123.5);
+
+        LocalStackDynamoPerformanceTest.saveProjectionRunState(tempDir, state);
+        var loaded = LocalStackDynamoPerformanceTest.loadProjectionRunState(tempDir);
+
+        assertTrue(Files.exists(tempDir.resolve("run-state.json")));
+        assertTrue(Files.exists(tempDir.resolve("run-state.backup.json")));
+        assertEquals(state, loaded.state());
+        assertEquals("PRIMARY", loaded.source());
+        assertTrue(loaded.historyComplete());
+    }
+
+    @Test
+    void recoversKnownRunStateFromBackupAfterPrimaryCorruption() throws Exception {
+        var state = new LocalStackDynamoPerformanceTest.ProjectionRunState(3, 456.75);
+        LocalStackDynamoPerformanceTest.saveProjectionRunState(tempDir, state);
+        Files.write(tempDir.resolve("run-state.json"), new byte[] {0, 0, 0, 0});
+
+        var loaded = LocalStackDynamoPerformanceTest.loadProjectionRunState(tempDir);
+
+        assertEquals(state, loaded.state());
+        assertEquals("BACKUP", loaded.source());
+        assertFalse(loaded.historyComplete());
+        assertFalse(Files.exists(tempDir.resolve("run-state.json")));
+        try (var files = Files.list(tempDir)) {
+            assertTrue(
+                    files.anyMatch(
+                            path ->
+                                    path.getFileName()
+                                            .toString()
+                                            .startsWith("run-state.json.corrupt-")));
+        }
+    }
+
+    @Test
     void evaluatesLowDiskReserveSafely() {
         long tenGiB = 10L * 1024 * 1024 * 1024;
 
