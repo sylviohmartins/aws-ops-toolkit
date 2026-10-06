@@ -9,6 +9,7 @@ param(
     [ValidateRange(1,1024)][int]$Segments = 128,
     [ValidateRange(1,256)][int]$Workers = 64,
     [ValidateSet('full-scan','structural-api')][string]$ValidationMode = 'full-scan',
+    [ValidatePattern('^\d+(,\d+)*$')][string]$CapacityTargets = '50000000,75000000,100000000',
     [switch]$ValidatedOffline
 )
 
@@ -74,6 +75,40 @@ function Assert-HostReserve([long]$AdditionalBytes, [string]$Operation) {
     if (($freeBytes - $AdditionalBytes) -lt $reserveBytes) {
         throw "$Operation would violate the 10 GB host-disk reserve. Free or move storage before continuing."
     }
+}
+
+function Show-CapacityPlan {
+    if (!(Test-Path -LiteralPath $manifestPath)) {
+        Write-Output 'CAPACITY PLAN unavailable=seed-manifest-missing'
+        return
+    }
+    $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
+    $currentRecords = [long]$manifest.primaryRecords
+    $liveBytes = Get-VolumeFileBytes $liveDb
+    if ($currentRecords -lt 1 -or $liveBytes -lt 1) {
+        Write-Output 'CAPACITY PLAN unavailable=live-fixture-missing-or-invalid'
+        return
+    }
+
+    $reserveBytes = 10GB
+    $freeBytes = Get-HostFreeBytes
+    $bytesPerRecord = [double]$liveBytes / [double]$currentRecords
+    Write-Output ("CAPACITY CURRENT records={0} dbGiB={1:N2} bytesPerRecord={2:N2} freeGiB={3:N2} reserveGiB={4:N2}" -f $currentRecords,($liveBytes/1GB),$bytesPerRecord,($freeBytes/1GB),($reserveBytes/1GB))
+
+    foreach ($targetText in $CapacityTargets.Split(',')) {
+        $target = [long]$targetText
+        if ($target -le $currentRecords) {
+            Write-Output ("CAPACITY TARGET records={0} status=ALREADY_REACHED" -f $target)
+            continue
+        }
+        $projectedBytes = [long][math]::Ceiling($bytesPerRecord * [double]$target)
+        $growthBytes = [long][math]::Max([double]0, [double]($projectedBytes - $liveBytes))
+        $minimumInitialFree = [long]($growthBytes + $reserveBytes)
+        $deficitBytes = [long][math]::Max([double]0, [double]($minimumInitialFree - $freeBytes))
+        $status = if ($deficitBytes -eq 0) { 'PASS_WITHOUT_ROLLBACK_BUDGET' } else { 'BLOCKED' }
+        Write-Output ("CAPACITY TARGET records={0} projectedDbGiB={1:N2} growthGiB={2:N2} minimumInitialFreeGiB={3:N2} currentFreeGiB={4:N2} deficitGiB={5:N2} status={6}" -f $target,($projectedBytes/1GB),($growthBytes/1GB),($minimumInitialFree/1GB),($freeBytes/1GB),($deficitBytes/1GB),$status)
+    }
+    Write-Output 'CAPACITY NOTE minimumInitialFree excludes compressed rollback creation; PASS still requires stage/append preflight and rollback budget.'
 }
 
 function Restore-PromotionBackup([string]$BackupDb) {
@@ -365,6 +400,7 @@ try {
         'status' {
             & docker ps -a --filter "name=$validator" --format 'table {{.Names}}\t{{.Status}}'
             & docker run --rm -v "$($volume):/data" --entrypoint sh $image -lc 'du -sh /data/offline-test 2>/dev/null || true'
+            Show-CapacityPlan
         }
         'stop' { Stop-Validator }
     }
