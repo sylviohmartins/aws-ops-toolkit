@@ -142,7 +142,7 @@ function Invoke-Benchmark {
     }
     try {
     if ($FreshProjection) {
-        $checkpointDir = Join-Path $outputDir ("projection-checkpoints/lab-perf-v3-01-rich-uniform-$PrimaryRecords-segments-$ScanSegments-page-$PageSize")
+        $checkpointDir = Join-Path $outputDir ("projection-checkpoints/lab-perf-v3-01-rich-uniform-$PrimaryRecords-segments-$ScanSegments-page-$PageSize-cfg-v1")
         if (Test-Path -LiteralPath $checkpointDir) {
             Remove-Item -LiteralPath $checkpointDir -Recurse -Force
             Write-Output "PROJECTION CHECKPOINTS RESET path=$checkpointDir"
@@ -155,6 +155,7 @@ function Invoke-Benchmark {
     $writeCompatibilityValue = if ($WriteCompatibility) { 'true' } else { 'false' }
     $runSweepsValue = if ($SkipSweeps) { 'false' } else { 'true' }
     $segmentProfileOnlyValue = if ($SegmentProfileOnly) { 'true' } else { 'false' }
+    $minFreeBytes = if ($AllowLowDisk -or $memory) { 0 } else { 10GB }
     $mvnArgs = @(
         '-B','-ntp','test',
         '-Dtoolkit.localstack.performance=true',
@@ -178,6 +179,8 @@ function Invoke-Benchmark {
         "-Dtoolkit.localstack.api-attempt-timeout-seconds=$ApiAttemptTimeoutSeconds",
         "-Dtoolkit.localstack.api-timeout-seconds=$ApiTimeoutSeconds",
         "-Dtoolkit.localstack.retry-max-attempts=$RetryMaxAttempts",
+        "-Dtoolkit.localstack.min-free-bytes=$minFreeBytes",
+        '-Dtoolkit.localstack.storage-check-every-pages=100',
         "-Dtoolkit.localstack.seed-manifest=$manifestPath",
         "-Dtoolkit.localstack.output-dir=$outputDir",
         '-Dtest=LocalStackDynamoPerformanceTest',

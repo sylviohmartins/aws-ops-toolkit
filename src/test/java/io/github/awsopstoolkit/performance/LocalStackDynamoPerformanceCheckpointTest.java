@@ -1,6 +1,7 @@
 package io.github.awsopstoolkit.performance;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -37,6 +38,18 @@ class LocalStackDynamoPerformanceCheckpointTest {
                 () ->
                         LocalStackDynamoPerformanceTest.ensureProjectionCheckpointIdentity(
                                 tempDir, "lab-perf-v3-01-rich-uniform", 512));
+    }
+
+    @Test
+    void evaluatesLowDiskReserveSafely() {
+        long tenGiB = 10L * 1024 * 1024 * 1024;
+
+        assertTrue(LocalStackDynamoPerformanceTest.shouldCancelForLowDisk(tenGiB - 1, tenGiB));
+        assertFalse(LocalStackDynamoPerformanceTest.shouldCancelForLowDisk(tenGiB, tenGiB));
+        assertFalse(LocalStackDynamoPerformanceTest.shouldCancelForLowDisk(1, 0));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> LocalStackDynamoPerformanceTest.shouldCancelForLowDisk(-1, tenGiB));
     }
 
     @Test

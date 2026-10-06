@@ -12,6 +12,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -85,6 +86,12 @@ class LocalStackDynamoPerformanceTest {
             Integer.getInteger("toolkit.localstack.retry-max-attempts", 1);
     private static final String LAB_MODE =
             System.getProperty("toolkit.localstack.mode", "PERSISTENT");
+    private static final long BENCHMARK_MIN_FREE_BYTES =
+            Long.getLong(
+                    "toolkit.localstack.min-free-bytes",
+                    "MEMORY".equalsIgnoreCase(LAB_MODE) ? 0L : 10L * 1024 * 1024 * 1024);
+    private static final int STORAGE_CHECK_EVERY_PAGES =
+            Integer.getInteger("toolkit.localstack.storage-check-every-pages", 100);
     private static final Path OUTPUT_DIR =
             Path.of(
                     System.getProperty(
@@ -176,6 +183,8 @@ class LocalStackDynamoPerformanceTest {
             report.put("apiAttemptTimeoutSeconds", API_ATTEMPT_TIMEOUT_SECONDS);
             report.put("apiTimeoutSeconds", API_TIMEOUT_SECONDS);
             report.put("retryMaxAttempts", RETRY_MAX_ATTEMPTS);
+            report.put("benchmarkMinFreeBytes", BENCHMARK_MIN_FREE_BYTES);
+            report.put("storageCheckEveryPages", STORAGE_CHECK_EVERY_PAGES);
             report.put("tables", tableResults);
             report.put("primaryScale", primary);
             report.put(
@@ -207,6 +216,8 @@ class LocalStackDynamoPerformanceTest {
         assertTrue(API_ATTEMPT_TIMEOUT_SECONDS > HTTP_SOCKET_TIMEOUT_SECONDS);
         assertTrue(API_TIMEOUT_SECONDS >= API_ATTEMPT_TIMEOUT_SECONDS);
         assertTrue(RETRY_MAX_ATTEMPTS >= 1 && RETRY_MAX_ATTEMPTS <= 10);
+        assertTrue(BENCHMARK_MIN_FREE_BYTES >= 0);
+        assertTrue(STORAGE_CHECK_EVERY_PAGES >= 1);
         String host = ENDPOINT.getHost();
         assertTrue(
                 "http".equals(ENDPOINT.getScheme())
@@ -673,6 +684,8 @@ class LocalStackDynamoPerformanceTest {
         ProjectionRunState priorRunState = loadProjectionRunState(checkpointRoot);
         var attemptPages = new AtomicLong();
         var attemptExamined = new AtomicLong();
+        var storageCancelled = new AtomicBoolean();
+        var lastUsableBytes = new AtomicLong(Long.MAX_VALUE);
         long started = System.nanoTime();
         DynamoDbService.ScanSummary summary;
         try {
@@ -689,7 +702,7 @@ class LocalStackDynamoPerformanceTest {
                             workers,
                             Long.MAX_VALUE,
                             resume,
-                            () -> false,
+                            storageCancelled::get,
                             (segment, page) -> {
                                 ProjectionProgress segmentProgress =
                                         progress.computeIfAbsent(
@@ -697,13 +710,33 @@ class LocalStackDynamoPerformanceTest {
                                 segmentProgress.add(page);
                                 long pages = attemptPages.incrementAndGet();
                                 long examined = attemptExamined.addAndGet(page.scannedCount());
-                                if (pages % 100 == 0) {
+                                if (pages % STORAGE_CHECK_EVERY_PAGES == 0) {
+                                    long usableBytes =
+                                            BENCHMARK_MIN_FREE_BYTES > 0
+                                                    ? Files.getFileStore(OUTPUT_DIR)
+                                                            .getUsableSpace()
+                                                    : Long.MAX_VALUE;
+                                    lastUsableBytes.set(usableBytes);
+                                    boolean lowDisk =
+                                            shouldCancelForLowDisk(
+                                                    usableBytes, BENCHMARK_MIN_FREE_BYTES);
                                     System.out.printf(
                                             Locale.ROOT,
-                                            "PROJECTION_SCAN_PROGRESS attemptPages=%d attemptExamined=%d resumedSegments=%d%n",
+                                            "PROJECTION_SCAN_PROGRESS attemptPages=%d attemptExamined=%d resumedSegments=%d usableGiB=%.2f%n",
                                             pages,
                                             examined,
-                                            resume.size());
+                                            resume.size(),
+                                            usableBytes == Long.MAX_VALUE
+                                                    ? -1.0
+                                                    : usableBytes / (1024.0 * 1024 * 1024));
+                                    if (lowDisk) {
+                                        storageCancelled.set(true);
+                                        System.err.printf(
+                                                Locale.ROOT,
+                                                "PROJECTION_SCAN_LOW_DISK_CANCEL usableGiB=%.2f reserveGiB=%.2f%n",
+                                                usableBytes / (1024.0 * 1024 * 1024),
+                                                BENCHMARK_MIN_FREE_BYTES / (1024.0 * 1024 * 1024));
+                                    }
                                     saveProjectionRunStateUnchecked(
                                             checkpointRoot,
                                             new ProjectionRunState(
@@ -727,6 +760,15 @@ class LocalStackDynamoPerformanceTest {
                     new ProjectionRunState(
                             priorRunState.attempts() + 1,
                             priorRunState.accumulatedElapsedSeconds() + attemptSeconds));
+            if (storageCancelled.get() && failure instanceof CancellationException) {
+                throw new IllegalStateException(
+                        String.format(
+                                Locale.ROOT,
+                                "Projection scan stopped because usable disk space fell below the configured reserve: usableGiB=%.2f reserveGiB=%.2f",
+                                lastUsableBytes.get() / (1024.0 * 1024 * 1024),
+                                BENCHMARK_MIN_FREE_BYTES / (1024.0 * 1024 * 1024)),
+                        failure);
+            }
             throw failure;
         }
         double attemptSeconds = elapsedSeconds(started);
@@ -781,6 +823,8 @@ class LocalStackDynamoPerformanceTest {
         result.put("projection", "pk,sk,status,version,transactionId,paymentId,accountId,document");
         result.put("checkpointDir", checkpointRoot.toString());
         result.put("checkpointConfigVersion", PROJECTION_CHECKPOINT_SCHEMA_VERSION);
+        result.put("benchmarkMinFreeBytes", BENCHMARK_MIN_FREE_BYTES);
+        result.put("storageCheckEveryPages", STORAGE_CHECK_EVERY_PAGES);
         result.put("resumedSegments", resume.size());
         long resumedCompletedSegments =
                 resume.values().stream()
@@ -816,6 +860,13 @@ class LocalStackDynamoPerformanceTest {
                                 + PAGE_SIZE
                                 + "-cfg-v"
                                 + PROJECTION_CHECKPOINT_SCHEMA_VERSION);
+    }
+
+    static boolean shouldCancelForLowDisk(long usableBytes, long reserveBytes) {
+        if (usableBytes < 0 || reserveBytes < 0) {
+            throw new IllegalArgumentException("Disk space values cannot be negative");
+        }
+        return reserveBytes > 0 && usableBytes < reserveBytes;
     }
 
     static void ensureProjectionCheckpointIdentity(Path root, String table, int segments)
