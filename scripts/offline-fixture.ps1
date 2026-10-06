@@ -10,6 +10,7 @@ param(
     [ValidateRange(1,256)][int]$Workers = 64,
     [ValidateSet('full-scan','structural-api')][string]$ValidationMode = 'full-scan',
     [ValidatePattern('^\d+(,\d+)*$')][string]$CapacityTargets = '50000000,75000000,100000000',
+    [ValidateRange(1,2000000000)][long]$MultiTableTargetRecords = 100000000,
     [switch]$ValidatedOffline
 )
 
@@ -109,6 +110,28 @@ function Show-CapacityPlan {
         Write-Output ("CAPACITY TARGET records={0} projectedDbGiB={1:N2} growthGiB={2:N2} minimumInitialFreeGiB={3:N2} currentFreeGiB={4:N2} deficitGiB={5:N2} status={6}" -f $target,($projectedBytes/1GB),($growthBytes/1GB),($minimumInitialFree/1GB),($freeBytes/1GB),($deficitBytes/1GB),$status)
     }
     Write-Output 'CAPACITY NOTE minimumInitialFree excludes compressed rollback creation; PASS still requires stage/append preflight and rollback budget.'
+
+    $capacityArgs = @(
+        'run','--rm','--network','none','--read-only','--tmpfs','/tmp',
+        '-e','PYTHONDONTWRITEBYTECODE=1',
+        '-v',"$($projectRoot)\lab:/lab:ro",
+        '--entrypoint','python',$image,
+        '/lab/estimate_multitable_capacity.py',
+        '--target-per-table',"$MultiTableTargetRecords",
+        '--samples','1000',
+        '--primary-db-bytes',"$liveBytes",
+        '--primary-records',"$currentRecords"
+    )
+    $capacityJson = (& docker @capacityArgs) -join [Environment]::NewLine
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Could not calculate multi-table fixture capacity estimate.'
+    }
+    $multi = $capacityJson | ConvertFrom-Json
+    if ($multi.kind -ne 'MULTITABLE_FIXTURE_CAPACITY_ESTIMATE') {
+        throw "Unexpected multi-table capacity estimate kind: $($multi.kind)"
+    }
+    Write-Output ("CAPACITY MULTITABLE tables={0} targetPerTable={1} totalRecords={2} logicalTiB={3:N2} calibratedPhysicalHeuristicTiB={4:N2} binding={5}" -f $multi.tableCount,$multi.targetPerTable,$multi.totalTargetRecords,$multi.totalProjectedLogicalTiB,$multi.calibratedPhysicalHeuristicTiB,$multi.physicalHeuristicBinding)
+    Write-Output 'CAPACITY MULTITABLE NOTE logicalTiB excludes SQLite/index overhead; calibrated physical TiB is order-of-magnitude only and does not model seven GSIs.'
 }
 
 function Restore-PromotionBackup([string]$BackupDb) {
