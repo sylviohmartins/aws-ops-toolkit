@@ -141,6 +141,11 @@ function Invoke-Benchmark {
         throw "Another LocalStack performance benchmark is already using $outputDir. Wait for it to finish before starting another run."
     }
     try {
+    $benchmarkCommit = (& git rev-parse HEAD).Trim()
+    if (-not $benchmarkCommit) { throw 'Could not resolve benchmark git commit.' }
+    $benchmarkDirty = [bool]((& git status --porcelain --untracked-files=normal) -join '')
+    $benchmarkDirtyValue = if ($benchmarkDirty) { 'true' } else { 'false' }
+    Write-Output "BENCHMARK SOURCE commit=$benchmarkCommit dirty=$benchmarkDirtyValue"
     if ($FreshProjection) {
         $checkpointDir = Join-Path $outputDir ("projection-checkpoints/lab-perf-v3-01-rich-uniform-$PrimaryRecords-segments-$ScanSegments-page-$PageSize-cfg-v1")
         if (Test-Path -LiteralPath $checkpointDir) {
@@ -183,6 +188,8 @@ function Invoke-Benchmark {
         '-Dtoolkit.localstack.storage-check-every-pages=100',
         "-Dtoolkit.localstack.seed-manifest=$manifestPath",
         "-Dtoolkit.localstack.output-dir=$outputDir",
+        "-Dtoolkit.localstack.git-commit=$benchmarkCommit",
+        "-Dtoolkit.localstack.git-dirty=$benchmarkDirtyValue",
         '-Dtest=LocalStackDynamoPerformanceTest',
         '-DargLine=-Xmx512m --enable-native-access=ALL-UNNAMED'
     )
@@ -191,12 +198,12 @@ function Invoke-Benchmark {
 
     $json = Join-Path $outputDir 'localstack-dynamodb.json'
     if (!(Test-Path -LiteralPath $json)) { throw "Benchmark output missing: $json" }
-    $commit = (& git rev-parse HEAD).Trim()
     $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
     $historyDir = Join-Path $projectRoot ("benchmark-results/localstack/" + $Mode)
     New-Item -ItemType Directory -Force -Path $historyDir | Out-Null
     $historyKind = if ($SegmentProfileOnly) { '-segment-profile' } else { '' }
-    $history = Join-Path $historyDir ("$stamp-$($commit.Substring(0,8))-$PrimaryRecords$historyKind.json")
+    $dirtyKind = if ($benchmarkDirty) { '-dirty' } else { '' }
+    $history = Join-Path $historyDir ("$stamp-$($benchmarkCommit.Substring(0,8))$dirtyKind-$PrimaryRecords$historyKind.json")
     Copy-Item -LiteralPath $json -Destination $history
     Write-Output "BENCHMARK READY json=$json history=$history"
     } finally {

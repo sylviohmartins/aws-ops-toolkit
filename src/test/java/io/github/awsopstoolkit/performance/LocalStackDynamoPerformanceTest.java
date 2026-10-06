@@ -86,6 +86,10 @@ class LocalStackDynamoPerformanceTest {
             Integer.getInteger("toolkit.localstack.retry-max-attempts", 1);
     private static final String LAB_MODE =
             System.getProperty("toolkit.localstack.mode", "PERSISTENT");
+    private static final String GIT_COMMIT =
+            System.getProperty("toolkit.localstack.git-commit", "UNKNOWN");
+    private static final boolean GIT_DIRTY =
+            Boolean.parseBoolean(System.getProperty("toolkit.localstack.git-dirty", "false"));
     private static final long BENCHMARK_MIN_FREE_BYTES =
             Long.getLong(
                     "toolkit.localstack.min-free-bytes",
@@ -183,6 +187,8 @@ class LocalStackDynamoPerformanceTest {
             report.put("apiAttemptTimeoutSeconds", API_ATTEMPT_TIMEOUT_SECONDS);
             report.put("apiTimeoutSeconds", API_TIMEOUT_SECONDS);
             report.put("retryMaxAttempts", RETRY_MAX_ATTEMPTS);
+            report.put("gitCommit", GIT_COMMIT);
+            report.put("gitDirty", GIT_DIRTY);
             report.put("benchmarkMinFreeBytes", BENCHMARK_MIN_FREE_BYTES);
             report.put("storageCheckEveryPages", STORAGE_CHECK_EVERY_PAGES);
             report.put("tables", tableResults);
