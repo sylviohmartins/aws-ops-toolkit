@@ -3,9 +3,12 @@
 ## 1. Baseline
 
 Esta rodada parte do runtime já validado com paginação, limites explícitos, Virtual Threads,
-checkpoint/ledger e backpressure. O novo laboratório existe separado do código operacional e
-não habilita AWS nem escrita. A referência arquitetural é de até **100.000.000 de registros
-por tabela**, em oito tabelas, sem pressupor 800 milhões simultâneos.
+checkpoint/ledger e backpressure. O laboratório existe separado do código operacional e não
+habilita AWS nem escrita. A referência arquitetural permanece de até **100.000.000 de registros
+por tabela**, em oito tabelas. Quando o objetivo for materializar simultaneamente esse teto nas
+oito tabelas, o cenário corresponde explicitamente a **800.000.000 registros totais**; ele não
+deve ser confundido com o harness sintético que percorre 100M unidades sem materializar oito
+datasets completos.
 
 A baseline anterior do ledger SQLite havia sido executada com 1M, 5M e 10M sob `-Xmx256m`.
 Ela provou memória bounded e durabilidade local, mas não throughput AWS. O antigo teto de
@@ -54,6 +57,10 @@ porque item size, keys, índices, cardinalidade e skew podem ser diferentes.
 | Perfil | Volume medido local | Natureza | Projeção real AWS |
 | --- | ---: | --- | --- |
 | synthetic-table-1..8 | 5M × 3 repetições cada | CPU/mapping bounded | pendente DEV/HML |
+| LocalStack v3-01 principal | 25M materializados | DynamoDB Local/SQLite, API pública | não projetar diretamente para AWS |
+| LocalStack v3-02..08 | 100 registros cada no estado atual | schemas sintéticos auxiliares | pendente expansão/DEV-HML |
+
+O fixture persistente atual **não contém 25M em cada tabela**: somente lab-perf-v3-01-rich-uniform está em 25M; as demais sete tabelas permanecem em 100 registros. O estimador derivado dos próprios PROFILES projeta o cenário 100M × 8 em ~3,43 TiB de dados lógicos antes de overhead de SQLite/índices. Uma heurística física calibrada pela tabela principal aponta ~5,83 TiB, mas não é gate vinculante e não modela corretamente os sete GSIs.
 ## 6. Comparação Query vs Scan vs PartiQL
 
 A escolha operacional permanece orientada por access pattern:
@@ -69,9 +76,16 @@ A escolha operacional permanece orientada por access pattern:
 | full scan grande inevitável | `Parallel Scan`, com concorrência limitada | explora partições sem producer ilimitado |
 
 O `DynamoWorkflow` existente já diferencia Query por `id` e Scan paginado/segmentado com
-`ProjectionExpression` e `ReturnConsumedCapacity.TOTAL`. PartiQL não é implementado apenas
-para “parecer SQL”; ele deve ser introduzido somente quando um cenário real justificar e
-então comparado com a API nativa.
+`ProjectionExpression` e `ReturnConsumedCapacity.TOTAL`. PartiQL não deve ser introduzido
+apenas para “parecer SQL”; quando houver cenário real, deve ser comparado com a API nativa.
+
+Essa comparação já foi executada no LocalStack 4.14.0 sobre o fixture principal de 25M usando
+a mesma partition key (`tenant-00000`), mesma projeção (`pk,sk,status,version`), consistência
+eventual e ordem balanceada após warm-up. Cada execução retornou 25.000 itens / 1.350.000 bytes
+em 30 requests. Duas execuções medidas de Query acumularam ~6,674 s; PartiQL acumulou
+~27,874 s, ratio ~4,177x neste emulador. A cardinalidade e bytes tiveram paridade; capacidade
+não foi comparável porque LocalStack reportou `ConsumedCapacity` para Query mas não para
+`ExecuteStatement`. O resultado não deve ser extrapolado como penalidade de PartiQL no AWS.
 
 ## 7. Parallel Scan benchmarks
 
@@ -199,13 +213,20 @@ coerente em vez de maximizar a página.
 
 ## 20. Projeção para 100 milhões
 
-Aqui não foi necessário projetar o hot path local: **100M foram realmente percorridos em
-três repetições**. A mediana final foi ~0,626 s no modelo CPU/mapping local, ~159,7 M
-registros/s, com dispersão de throughput de ~1,8%.
+No harness CPU/mapping, não foi necessário projetar o hot path local: **100M unidades
+sintéticas foram realmente percorridas em três repetições**. A mediana final foi ~0,626 s,
+~159,7 M registros/s, com dispersão de throughput de ~1,8%. Esse resultado comprova
+boundedness do pipeline, não a capacidade de armazenar ou ler 100M itens reais no DynamoDB
+Local.
 
-Esse tempo **não é projeção de Scan DynamoDB**. Para AWS, a projeção deverá ser:
-`100.000.000 / throughput_sustentável_remoto`, com o resultado marcado explicitamente como
-`PROJETADO` até existir uma execução física equivalente.
+No laboratório materializado, a tabela principal chegou a 25M. Com o DB atual de ~49,90 GiB,
+a projeção linear da principal é ~199,58 GiB em 100M, antes de rollback/reserva. O cenário
+100M × 8 é muito maior: ~3,43 TiB lógicos e múltiplos TiB físicos. Portanto ele exige
+infraestrutura dedicada e não deve ser forçado no host local.
+
+Nenhum desses tempos é projeção de Scan DynamoDB AWS. Para AWS, a projeção continua sendo
+`registros / throughput_sustentável_remoto`, marcada explicitamente como `PROJETADO` até
+existir execução equivalente em DEV/HML.
 ## 21. Riscos
 
 - confundir benchmark sintético com capacidade AWS;
@@ -234,12 +255,17 @@ o dataset inteiro; a memória permanece bounded; o harness identifica saturaçã
 concorrência; 16 workers foi o knee estável do modelo atual; page size 1000 foi a baseline
 mais coerente após repetição; e os resultados são persistidos/comparáveis.
 
-**Não confirmado e não inventado:** throughput sustentável DynamoDB, melhor `TotalSegments`,
-pool ótimo, custo RCU/WCU, impacto de rede, PartiQL versus API nativa, throttling real,
-credencial expirada durante scan remoto e resultados individuais das oito tabelas reais.
-Portanto o Performance Lab local está implementado e reproduzível, enquanto a homologação AWS
-continua sendo uma etapa ambiental, não uma lacuna que possa ser preenchida com números
-sintéticos.
+**Confirmado adicionalmente no LocalStack:** 25M reais na tabela principal; GetItem/BatchGet;
+Query versus PartiQL com paridade semântica; comportamento de Parallel Scan com checkpoint,
+resume e long-tail; e limites físicos do backing store local. Esses resultados caracterizam o
+emulador e o host, não o DynamoDB gerenciado.
+
+**Não confirmado e não inventado:** throughput sustentável DynamoDB AWS, melhor
+`TotalSegments` em partições reais, pool ótimo, custo RCU/WCU equivalente de PartiQL,
+impacto de rede, throttling real, credencial expirada durante scan remoto e resultados
+materializados de 100M para cada uma das oito tabelas. Portanto o Performance Lab local está
+implementado e reproduzível, enquanto a homologação AWS e o cenário 8×100M continuam sendo
+etapas ambientais, não lacunas que possam ser preenchidas com números sintéticos.
 
 ## Como executar
 
@@ -255,4 +281,13 @@ Para um ledger acima de 30M, a execução deliberada exige:
 .\scripts\benchmark.ps1 -Records 100000000 -PageSize 1000 -AllowLargeLedger
 ~~~
 
-Não executar esse ledger pesado sem verificar espaço livre e objetivo do experimento.
+Antes de qualquer expansão do fixture DynamoDB Local, consultar o gate físico atual:
+
+~~~powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
+.\scripts\offline-fixture.ps1 -Action status
+~~~
+
+O status mostra o gate da tabela principal para 50M/75M/100M e a estimativa separada do cenário
+100M × 8. Não executar crescimento pesado sem que o gate aplicável passe e sem orçamento
+adicional para rollback.
