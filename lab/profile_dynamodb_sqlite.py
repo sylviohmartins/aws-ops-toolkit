@@ -172,6 +172,9 @@ def main():
             "kind": "LOCALSTACK_SQLITE_BACKING_STORE_DIAGNOSTIC",
             "readOnly": True,
             "managedDynamoDbEquivalent": False,
+            "cacheControl": "NONE",
+            "coldCacheGuaranteed": False,
+            "operationOrder": ["count", "pointLookup", "sequentialObjectJson"],
             "warning": (
                 "SQLite results diagnose DynamoDB Local's backing store only; "
                 "they are not an access strategy or performance projection for AWS DynamoDB."

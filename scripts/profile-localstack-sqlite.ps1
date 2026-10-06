@@ -58,6 +58,9 @@ try {
     if ($report.readOnly -ne $true -or $report.managedDynamoDbEquivalent -ne $false) {
         throw 'SQLite diagnostic safety metadata is invalid.'
     }
+    if ($report.cacheControl -ne 'NONE' -or $report.coldCacheGuaranteed -ne $false) {
+        throw 'SQLite diagnostic cache semantics are invalid.'
+    }
     if ([int64]$report.count.rows -ne $TargetRecords) {
         throw "Unexpected SQLite row count: $($report.count.rows)"
     }
