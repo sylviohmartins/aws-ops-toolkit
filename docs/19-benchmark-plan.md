@@ -187,6 +187,19 @@ Os checkpoints novos também passaram a usar uma identidade versionada. O diret�
 
 A proveniência do benchmark também passou a ser capturada no **início** da execução. O script resolve `git rev-parse HEAD` e `git status --porcelain` antes do Maven, grava `gitCommit` e `gitDirty` no JSON e usa o mesmo commit pré-execução no filename histórico; resultados com alterações locais recebem o sufixo `-dirty`. O perfil curto `20261006-020837-3cac0516-25000000-segment-profile.json` validou a trilha limpa de ponta a ponta: `gitCommit=3cac05161644cd7bf7d3163fb94ba8b6fbad6e3d`, `gitDirty=false`, e o filename usa o mesmo hash curto sem marcador dirty.
 
+### Diagnóstico read-only do backing store SQLite
+
+O laboratório passou a oferecer `scripts/profile-localstack-sqlite.ps1` + `lab/profile_dynamodb_sqlite.py` exclusivamente para diagnosticar o backing store do DynamoDB Local. O wrapper monta o volume Docker como `:ro`, executa o container com filesystem read-only e rede desativada, ativa `PRAGMA query_only=ON`, registra proveniência Git e salva o resultado em `benchmark-results/localstack/sqlite-diagnostics`. O artefato declara explicitamente `managedDynamoDbEquivalent=false`: esse caminho **não é uma alternativa operacional ao DynamoDB gerenciado** e não deve ser incorporado ao runtime do toolkit.
+
+No schema físico da tabela principal, a PK SQLite é `(hashKey, rangeKey)` e existe um índice `hashValue`. O `EXPLAIN QUERY PLAN` mostrou:
+- `COUNT(*)`: scan do índice covering `hashValue`;
+- point lookup por `hashKey + rangeKey`: search pela PK SQLite;
+- leitura sem predicado: table scan.
+
+O cache do host domina fortemente medições locais. Em observações sucessivas do mesmo DB de 25M, sem qualquer flush de cache, o `COUNT(*)` caiu de ~106,52 s para ~15,38 s e depois para **1,14 s**. Por isso o profiler grava `cacheControl=NONE` e `coldCacheGuaranteed=false`; seus tempos servem para diagnóstico de plano e comportamento do emulador, não como baseline canônico.
+
+O artefato reproduzível `20261006-021652-a21090ec-25000000-sqlite-diagnostic.json`, produzido com `gitDirty=false`, confirmou 25.000.000 linhas. Já com cache aquecido, 1.000 lookups por chave tiveram média ~0,017 ms, p95 ~0,037 ms e máximo ~0,090 ms; a leitura sequencial dos primeiros 100.000 `ObjectJSON` atingiu ~719 mil linhas/s e ~1.226 MiB/s. Em conjunto com a telemetria de `client.scan(...)`, isso mostra que a cauda longa observada no Parallel Scan não pode ser explicada apenas por leitura sequencial bruta do SQLite: há efeitos importantes de plano, cache e da própria camada DynamoDB Local.
+
 ### Gate de capacidade para 50M, 75M e 100M
 
 Após o fechamento do baseline 25M, o host tinha apenas **~9,07 GiB livres** no único volume disponível (`C:`). O DB live de 25M mede **53.575.275.520 bytes (~49,90 GiB)**, aproximadamente **2.143 bytes por registro**. Mantendo essa densidade, o fixture de 50M projeta ~**99,79 GiB**, o de 75M ~**149,69 GiB** e o de 100M ~**199,58 GiB**.
