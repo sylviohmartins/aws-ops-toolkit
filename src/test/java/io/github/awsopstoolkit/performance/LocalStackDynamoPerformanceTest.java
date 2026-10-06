@@ -95,6 +95,7 @@ class LocalStackDynamoPerformanceTest {
                             "toolkit.localstack.seed-manifest",
                             ".aws-ops-toolkit/localstack-performance/seed-manifest.json"));
     private static final String ITEM_SHAPE = "enterprise-incident-v1";
+    private static final int PROJECTION_CHECKPOINT_SCHEMA_VERSION = 1;
     private static final JsonMapper JSON = JsonMapper.builder().build();
     private static final String SCALE_PROJECTION =
             "pk,sk,#s,#v,transactionId,paymentId,accountId,document";
@@ -665,6 +666,7 @@ class LocalStackDynamoPerformanceTest {
                         PAGE_SIZE);
         Path checkpointRoot = projectionCheckpointRoot(table, segments);
         Files.createDirectories(checkpointRoot);
+        ensureProjectionCheckpointIdentity(checkpointRoot, table, segments);
         var progress = new ConcurrentHashMap<Integer, ProjectionProgress>();
         Map<Integer, DynamoDbService.SegmentCheckpoint> resume =
                 loadProjectionCheckpoints(checkpointRoot, table, segments, progress);
@@ -778,6 +780,7 @@ class LocalStackDynamoPerformanceTest {
         result.put("completedSegments", completedSegments);
         result.put("projection", "pk,sk,status,version,transactionId,paymentId,accountId,document");
         result.put("checkpointDir", checkpointRoot.toString());
+        result.put("checkpointConfigVersion", PROJECTION_CHECKPOINT_SCHEMA_VERSION);
         result.put("resumedSegments", resume.size());
         long resumedCompletedSegments =
                 resume.values().stream()
@@ -810,7 +813,53 @@ class LocalStackDynamoPerformanceTest {
                                 + "-segments-"
                                 + segments
                                 + "-page-"
-                                + PAGE_SIZE);
+                                + PAGE_SIZE
+                                + "-cfg-v"
+                                + PROJECTION_CHECKPOINT_SCHEMA_VERSION);
+    }
+
+    static void ensureProjectionCheckpointIdentity(Path root, String table, int segments)
+            throws Exception {
+        Path path = root.resolve("checkpoint-config.json");
+        ProjectionCheckpointIdentity expected =
+                new ProjectionCheckpointIdentity(
+                        PROJECTION_CHECKPOINT_SCHEMA_VERSION,
+                        table,
+                        PRIMARY_RECORDS,
+                        PAGE_SIZE,
+                        segments,
+                        ITEM_SHAPE,
+                        SCALE_PROJECTION);
+        if (Files.exists(path)) {
+            ProjectionCheckpointIdentity saved =
+                    JSON.readValue(path.toFile(), ProjectionCheckpointIdentity.class);
+            if (!expected.equals(saved)) {
+                throw new IllegalStateException(
+                        "Projection checkpoint identity mismatch: "
+                                + path
+                                + ". Use a fresh checkpoint directory.");
+            }
+            return;
+        }
+
+        boolean hasLegacyState;
+        try (var entries = Files.list(root)) {
+            hasLegacyState =
+                    entries.anyMatch(
+                            entry -> {
+                                String name = entry.getFileName().toString();
+                                return name.startsWith("segment-") || name.equals("run-state.json");
+                            });
+        }
+        if (hasLegacyState) {
+            throw new IllegalStateException(
+                    "Projection checkpoint directory contains legacy state without "
+                            + "checkpoint-config.json: "
+                            + root
+                            + ". Run with FreshProjection to avoid mixing incompatible "
+                            + "checkpoint semantics.");
+        }
+        writeJsonAtomically(path, expected);
     }
 
     private static Map<Integer, DynamoDbService.SegmentCheckpoint> loadProjectionCheckpoints(
@@ -1285,6 +1334,15 @@ class LocalStackDynamoPerformanceTest {
             return completed;
         }
     }
+
+    private record ProjectionCheckpointIdentity(
+            int schemaVersion,
+            String table,
+            int recordsTarget,
+            int pageSize,
+            int totalSegments,
+            String itemShape,
+            String projection) {}
 
     private record ProjectionCheckpointFile(
             String table,
