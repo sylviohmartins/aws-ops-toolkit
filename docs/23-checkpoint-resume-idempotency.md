@@ -7,7 +7,7 @@
 | Nível | Store | Garantia e limite |
 |---|---|---|
 | Skeleton demonstrativo | Snapshot JSON e arquivos locais com substituição atômica quando suportada | Recuperação de geração sintética/leituras; não há ledger transacional de side effects AWS |
-| CORE de escrita alvo | SQLite local, WAL, transações curtas e single writer | Atomicidade entre intenção, estado de etapas, cursor e eventos de relatório no mesmo banco; sem atomicidade com a AWS |
+| CORE de escrita implementado localmente | `SqliteJournal` com SQLite local, WAL/FULL, transações curtas e lock de processo | Durabilidade local de jobs, cursores, tasks, efeitos e auditoria; sem atomicidade com a AWS e sem homologação corporativa implícita |
 
 **FATO:** rename com `ATOMIC_MOVE` depende do filesystem; sua semântica não cria uma transação com outro arquivo nem comprova persistência física do diretório em todos os sistemas. [Java StandardCopyOption](https://docs.oracle.com/en/java/javase/25/docs/api/java.base/java/nio/file/StandardCopyOption.html). **DECISÃO:** não usar snapshots JSON como prova de exactly-once, nem fallback silencioso para cópia não atômica em requisito que dependa dessa propriedade.
 
@@ -26,7 +26,7 @@ A demonstração deve falhar claramente se a garantia necessária não estiver d
 
 ## Modelo de dados alvo
 
-DDL ilustrativo de arquitetura; **não implementado no skeleton**:
+DDL **conceitual** de arquitetura. O runtime local já implementa o ledger SQLite, mas usa um schema concreto diferente (`jobs`, `cursors`, `tasks`, `effects`, `audit`) e migrations versionadas; portanto o bloco abaixo continua sendo modelo de responsabilidades/invariantes, não o DDL executado por `SqliteJournal`:
 
 ```sql
 CREATE TABLE operation (
@@ -97,7 +97,7 @@ Migração inicial deve acrescentar foreign keys, índices de pendências/págin
 
 Agendar checkpoint de WAL, limitar leitores longos e observar tamanho em disco. Não copiar somente `.db` de um banco ativo e assumir backup consistente; usar API de backup ou fechamento coordenado. Não apagar `-wal`/`-shm` manualmente. [Backup SQLite](https://www.sqlite.org/backup.html). A garantia depende de filesystem/armazenamento que respeite flush e lock; validar crash/power-loss no ambiente disponível. [Atomicidade SQLite](https://www.sqlite.org/atomiccommit.html).
 
-O driver JDBC, versão SQLite embutida, licença e binários nativos precisam ser homologados e fixados na fase CORE. SQLite não é dependência necessária para rodar a demonstração atual. Limitar cache e lote; estimar espaço de ledger + WAL + pre-images + relatórios + temporários, incluindo margem.
+O runtime local já usa o driver JDBC SQLite e valida essa estratégia nos testes/smokes. Versão/distribuição, licença/binários nativos e uso em máquina corporativa ainda precisam de homologação ambiental. Limitar cache e lote; estimar espaço de ledger + WAL + pre-images + relatórios + temporários, incluindo margem.
 
 ## Página e fronteira de commit
 

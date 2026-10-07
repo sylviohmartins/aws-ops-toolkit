@@ -1,6 +1,6 @@
 # ADR 008 — JSON demonstrativo e ledger SQLite antes da escrita
 
-Status: JSON implementado; SQLite aceito para CORE, ainda não implementado. Data: 2026-09-18.
+Status: JSON implementado; ledger SQLite CORE implementado no runtime local, com homologação ambiental ainda pendente. Data da decisão: 2026-09-18; status revisado em 2026-10-07.
 
 ## Context
 
@@ -8,7 +8,7 @@ Um cursor não explica quais efeitos de uma página foram concluídos. Relatóri
 
 ## Decision
 
-Manter JSON/partes de relatório para a demonstração sintética. Antes de escrita AWS, implementar SQLite local com WAL, `synchronous=FULL`, single writer e transações curtas contendo intenção, outcome, eventos de relatório e cursor. Efeitos remotos ocorrem fora da transação; incerteza vira UNKNOWN. [SQLite WAL](https://www.sqlite.org/wal.html), [atomicidade](https://www.sqlite.org/atomiccommit.html).
+Manter JSON/partes de relatório para a demonstração sintética. O runtime CORE implementa SQLite local com WAL, `synchronous=FULL`, foreign keys, lock local de processo e transações curtas para jobs, cursores, tasks, efeitos e auditoria. Efeitos remotos ocorrem fora da transação; incerteza continua virando UNKNOWN. O schema concreto é uma materialização do modelo conceitual descrito em [checkpoint e idempotência](../23-checkpoint-resume-idempotency.md), não uma cópia literal daquele DDL. [SQLite WAL](https://www.sqlite.org/wal.html), [atomicidade](https://www.sqlite.org/atomiccommit.html).
 
 ## Alternatives
 

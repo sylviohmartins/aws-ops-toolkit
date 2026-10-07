@@ -1,6 +1,6 @@
 # ADR 009 — CSV detalhado e XLSX resumido
 
-Status: CSV local no skeleton; exportações adicionais no roadmap. Data: 2026-09-18.
+Status: CSV streaming e XLSX resumido via SXSSF implementados no runtime local; homologação de retenção/PII/armazenamento permanece ambiental. Data da decisão: 2026-09-18; status revisado em 2026-10-07.
 
 ## Context
 
@@ -16,4 +16,4 @@ XSSF integral serve somente volumes pequenos conhecidos. Fastexcel pode reduzir 
 
 ## Consequences
 
-Report é projeção do ledger: falha ao gerar CSV não provoca repetição da escrita AWS. Cabeçalhos, encoding, escaping, neutralização de fórmula em exportação humana e colunas permitidas são contratos versionados. Dimensionar temporários, proteger pre-images e não prometer rollback universal. O skeleton não implementa XLSX nem audit trail produtivo completo. Ver [relatórios](../15-reporting-audit.md).
+Report é projeção do ledger: falha ao gerar CSV/XLSX não provoca repetição da escrita AWS. Cabeçalhos, encoding, escaping, neutralização de fórmula em exportação humana e colunas permitidas são contratos versionados. O runtime expõe CSV e XLSX via `SXSSFWorkbook`, com janela de linhas e limite de registros configuráveis, e usa o `SqliteJournal` para auditoria local. Isso ainda não equivale a audit trail produtivo homologado: retenção, PII, ACLs, criptografia e destino de evidência permanecem `VALIDAR NO AMBIENTE`. Ver [relatórios](../15-reporting-audit.md).
