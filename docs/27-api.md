@@ -103,7 +103,7 @@ $toolkitOperation = Invoke-RestMethod -Method Post `
 $toolkitOperationId = $toolkitOperation.operationId
 ```
 
-O retorno 202 confirma admissão, não conclusão. Inícios repetidos criam IDs distintos: `Idempotency-Key` do contrato alvo **ainda não é implementado**. Se perder a resposta do POST, não repetir presumindo deduplicação.
+O retorno 202 confirma admissão, não conclusão. O header opcional `Idempotency-Key` está implementado para tornar o **POST de admissão** repetível: a chave aceita de 1 a 128 caracteres sem whitespace periférico nem caracteres de controle, é persistida apenas por hash SHA-256 e fica vinculada ao tipo, versão da definição, modo e parâmetros tipados/canônicos. Repetir a mesma chave com o mesmo request devolve o mesmo `operationId`, inclusive após restart; reutilizar a chave com request semanticamente diferente retorna 409. Sem o header, cada início continua criando um ID distinto. Essa garantia não torna idempotentes os efeitos AWS/HTTP executados pela operação; esses continuam sujeitos ao ledger/reconciliação próprios.
 
 ### Estado e progresso
 

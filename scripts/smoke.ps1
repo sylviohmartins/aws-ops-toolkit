@@ -36,8 +36,13 @@ function Start-Toolkit {
     }
     if (!$ready) { throw 'Startup timed out' }
 }
-function Call-Api($method, $path, $body) {
-    $arguments = @{Method=$method; Uri="$base$path"; Headers=$headers}
+function Call-Api($method, $path, $body, $additionalHeaders) {
+    $requestHeaders = @{}
+    foreach ($entry in $headers.GetEnumerator()) { $requestHeaders[$entry.Key] = $entry.Value }
+    if ($null -ne $additionalHeaders) {
+        foreach ($entry in $additionalHeaders.GetEnumerator()) { $requestHeaders[$entry.Key] = $entry.Value }
+    }
+    $arguments = @{Method=$method; Uri="$base$path"; Headers=$requestHeaders}
     if ($null -ne $body) { $arguments.ContentType = 'application/json'; $arguments.Body = ($body | ConvertTo-Json -Depth 5) }
     return Invoke-RestMethod @arguments
 }
@@ -69,6 +74,17 @@ try {
     Expect-Status 401 { Invoke-WebRequest -Uri "$base/actuator/health" -UseBasicParsing }
     Expect-Status 401 { Invoke-WebRequest -Uri "$base/actuator/health" -Headers @{Authorization=$headers.Authorization; Origin='https://example.invalid'} -UseBasicParsing }
     Expect-Status 400 { Call-Api POST '/api/v1/operations/synthetic-inventory' @{mode='EXECUTE';parameters=@{records=10;delayMillis=0}} }
+    $idempotencyKey = 'smoke-' + [guid]::NewGuid().ToString('N')
+    $idempotentBody = @{mode='DRY_RUN';parameters=@{records=25;delayMillis=0}}
+    $idempotentHeaders = @{'Idempotency-Key'=$idempotencyKey}
+    $idempotent = Call-Api POST '/api/v1/operations/synthetic-inventory' $idempotentBody $idempotentHeaders
+    Wait-State $idempotent.operationId 'COMPLETED' | Out-Null
+    $idempotentReplay = Call-Api POST '/api/v1/operations/synthetic-inventory' $idempotentBody $idempotentHeaders
+    if ($idempotentReplay.operationId -ne $idempotent.operationId) { throw 'Idempotency replay created a different operation' }
+    Expect-Status 409 {
+        Call-Api POST '/api/v1/operations/synthetic-inventory' @{mode='DRY_RUN';parameters=@{records=26;delayMillis=0}} $idempotentHeaders
+    }
+
     $created = Call-Api POST '/api/v1/operations/synthetic-inventory' @{mode='DRY_RUN';parameters=@{records=1000;delayMillis=0}}
     $done = Wait-State $created.operationId 'COMPLETED'
     if ($done.cursor -ne 1000) { throw 'Unexpected completed cursor' }
@@ -85,6 +101,8 @@ try {
     Stop-Process -Id $script:process.Id -Force
     $script:process.WaitForExit()
     Start-Toolkit
+    $idempotentAfterRestart = Call-Api POST '/api/v1/operations/synthetic-inventory' $idempotentBody $idempotentHeaders
+    if ($idempotentAfterRestart.operationId -ne $idempotent.operationId) { throw 'Idempotency reservation did not survive restart' }
     $interrupted = Call-Api GET "/api/v1/operations/$($job.operationId)" $null
     if ($interrupted.status -ne 'INTERRUPTED') { throw 'Crash was not detected' }
     Call-Api POST "/api/v1/operations/$($job.operationId)/resume" $null | Out-Null
@@ -96,7 +114,7 @@ try {
     Call-Api POST "/api/v1/operations/$($cancelled.operationId)/cancel" $null | Out-Null
     Wait-State $cancelled.operationId 'CANCELLED' | Out-Null
     Expect-Status 409 { Call-Api POST "/api/v1/operations/$($cancelled.operationId)/resume" $null }
-    Write-Output "SMOKE PASS: auth, origin, write denial, admission, CSV, pause, crash/resume, cancellation. Evidence: $runDirectory"
+    Write-Output "SMOKE PASS: auth, origin, write denial, idempotent admission, CSV, pause, crash/resume, cancellation. Evidence: $runDirectory"
 } finally {
     if ($null -ne $script:process -and !$script:process.HasExited) {
         Stop-Process -Id $script:process.Id -Force

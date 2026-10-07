@@ -3,6 +3,7 @@ package io.github.awsopstoolkit.checkpoint;
 import io.github.awsopstoolkit.configuration.ToolkitProperties;
 import io.github.awsopstoolkit.operation.OperationSnapshot;
 import io.github.awsopstoolkit.operation.SyntheticOperationLimits;
+import io.github.awsopstoolkit.security.Hashing;
 import jakarta.annotation.PreDestroy;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -11,6 +12,7 @@ import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
+import java.util.Objects;
 import java.util.UUID;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.ObjectMapper;
@@ -55,6 +57,35 @@ public final class FileCheckpointStore implements AutoCloseable {
                 mapper.writeValueAsBytes(snapshot));
     }
 
+    public IdempotencyReservation findIdempotency(String key, String fingerprint)
+            throws IOException {
+        validateIdempotencyKey(key);
+        validateFingerprint(fingerprint);
+        String keyHash = Hashing.sha256Hex(key);
+        Path path = idempotencyPath(keyHash);
+        if (!Files.exists(path)) return null;
+        return readIdempotencyReservation(path, keyHash, fingerprint);
+    }
+
+    public IdempotencyReservation reserveIdempotency(
+            String key, String fingerprint, UUID proposedOperationId) throws IOException {
+        validateIdempotencyKey(key);
+        validateFingerprint(fingerprint);
+        Objects.requireNonNull(proposedOperationId, "proposedOperationId");
+
+        String keyHash = Hashing.sha256Hex(key);
+        Path path = idempotencyPath(keyHash);
+        if (Files.exists(path)) return readIdempotencyReservation(path, keyHash, fingerprint);
+
+        var reservation = new IdempotencyReservation(1, keyHash, fingerprint, proposedOperationId);
+        atomicWrite(path, mapper.writeValueAsBytes(reservation));
+        return reservation;
+    }
+
+    public boolean checkpointExists(UUID id) {
+        return Files.isRegularFile(directory(id).resolve("checkpoint.json"));
+    }
+
     public OperationSnapshot load(UUID id) throws IOException {
         var result =
                 mapper.readValue(
@@ -97,6 +128,49 @@ public final class FileCheckpointStore implements AutoCloseable {
     private Path directory(UUID id) {
         return root.resolve(id.toString());
     }
+
+    private Path idempotencyPath(String keyHash) {
+        return root.resolve("idempotency").resolve(keyHash + ".json");
+    }
+
+    private IdempotencyReservation readIdempotencyReservation(
+            Path path, String keyHash, String fingerprint) throws IOException {
+        var saved = mapper.readValue(Files.readAllBytes(path), IdempotencyReservation.class);
+        if (saved.schemaVersion() != 1
+                || !keyHash.equals(saved.keyHash())
+                || saved.fingerprint() == null
+                || saved.fingerprint().isBlank()
+                || saved.operationId() == null) {
+            throw new IOException("Unsupported or corrupt idempotency reservation");
+        }
+        if (!fingerprint.equals(saved.fingerprint()))
+            throw new IllegalStateException(
+                    "Idempotency-Key is already bound to a different request");
+        return saved;
+    }
+
+    private static void validateIdempotencyKey(String key) {
+        if (key == null || key.isBlank() || key.length() > 128)
+            throw new IllegalArgumentException(
+                    "Idempotency-Key must contain between 1 and 128 characters");
+        if (!key.equals(key.trim()))
+            throw new IllegalArgumentException(
+                    "Idempotency-Key cannot have surrounding whitespace");
+        for (int i = 0; i < key.length(); i++) {
+            char value = key.charAt(i);
+            if (Character.isISOControl(value))
+                throw new IllegalArgumentException(
+                        "Idempotency-Key cannot contain control characters");
+        }
+    }
+
+    private static void validateFingerprint(String fingerprint) {
+        if (fingerprint == null || fingerprint.isBlank())
+            throw new IllegalArgumentException("Idempotency fingerprint is required");
+    }
+
+    public record IdempotencyReservation(
+            int schemaVersion, String keyHash, String fingerprint, UUID operationId) {}
 
     static void atomicWrite(Path target, byte[] bytes) throws IOException {
         Files.createDirectories(target.getParent());

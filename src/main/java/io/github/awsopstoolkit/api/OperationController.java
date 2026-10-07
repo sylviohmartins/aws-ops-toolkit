@@ -23,9 +23,11 @@ public final class OperationController {
 
     @PostMapping("/{type}")
     public ResponseEntity<OperationSnapshot> start(
-            @PathVariable String type, @Valid @RequestBody OperationRequest request)
+            @PathVariable String type,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+            @Valid @RequestBody OperationRequest request)
             throws IOException {
-        var snapshot = executor.start(type, request);
+        var snapshot = executor.start(type, request, idempotencyKey);
         return ResponseEntity.accepted()
                 .location(URI.create("/api/v1/operations/" + snapshot.operationId()))
                 .body(snapshot);
