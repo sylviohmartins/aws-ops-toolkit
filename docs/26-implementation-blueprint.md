@@ -13,7 +13,7 @@ Este documento descreve o código em `src/main/java/io/github/awsopstoolkit` e s
 | Checkpoint JSON e CSV em chunks | Real | Replay determinístico local; sem ledger de efeitos remotos |
 | Clients AWS centralizados por profile/provider e Apache 5 | Real | Habilitados somente quando `toolkit.aws.enabled=true`; ambiente corporativo ainda requer homologação |
 | Validação STS/account/principal/recurso | Real | Allowlist e identidade efetiva são guardrails; Break Glass/SSO corporativo permanece `VALIDAR NO AMBIENTE` |
-| DynamoDB/SQS/SNS/Lambda/S3 | Real no runtime | Workflows concretos, budgets, ledger e laboratório Moto; sem alegar homologação AWS real |
+| DynamoDB/SQS/SNS/Lambda/S3 | Real no runtime | Workflows concretos, budgets, ledger e laboratório LocalStack 4.14.0; sem alegar homologação AWS real |
 | HTTP/JDK `PaymentGateway` | Real | Endpoint/host/timeouts/retry/body limit via `HttpProperties`; 429/5xx participam do backpressure |
 | Autorização, DRY_RUN, plano, aprovação, canary e auth resume | Real | Writes continuam fail-closed por múltiplos gates |
 | SQLite/WAL, ledger e reconciliação | Real | Durável localmente; não cria transação distribuída com AWS |

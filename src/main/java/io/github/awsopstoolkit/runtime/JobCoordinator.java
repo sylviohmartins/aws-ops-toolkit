@@ -184,6 +184,20 @@ public final class JobCoordinator {
         return Set.copyOf(workflows.keySet());
     }
 
+    public List<OperationCatalogEntry> operationCatalog() {
+        return workflows.values().stream()
+                .map(
+                        workflow ->
+                                new OperationCatalogEntry(
+                                        workflow.type(),
+                                        workflow.version(),
+                                        workflow.writes(),
+                                        workflow.estimatedCallsPerCandidate(),
+                                        List.copyOf(workflow.risks())))
+                .sorted(Comparator.comparing(OperationCatalogEntry::type))
+                .toList();
+    }
+
     public Map<String, Object> summary(String id) throws Exception {
         var job = journal.job(id);
         long records = journal.count(id, null);
@@ -400,6 +414,13 @@ public final class JobCoordinator {
                 && !Set.of("ACCEPTED", "FUNCTION_ERROR", "BUSINESS_REJECTED").contains(result))
             throw new IllegalArgumentException("Actual Lambda result is required");
     }
+
+    public record OperationCatalogEntry(
+            String type,
+            String version,
+            boolean writes,
+            int estimatedCallsPerCandidate,
+            List<String> risks) {}
 
     private Workflow workflow(String type) {
         var rule = workflows.get(type);

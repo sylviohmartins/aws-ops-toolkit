@@ -131,7 +131,7 @@ No início de um job, JobCoordinator grava no audit CONFIG_SNAPSHOT com workers,
 | dev | DEV | off | off | configurar explicitamente recursos autorizados |
 | hml | HML | off | off | homologação controlada |
 | prod | PROD | off | off | fail-closed; habilitação deliberada e autorizada |
-| lab | LOCAL | emulador loopback | runtime lab | Moto/API sintética |
+| lab | LOCAL | emulador loopback | runtime lab | LocalStack 4.14.0/API sintética |
 
 O profile lab só é seguro porque os clients são substituídos por endpoints loopback e fixtures sintéticos.
 
