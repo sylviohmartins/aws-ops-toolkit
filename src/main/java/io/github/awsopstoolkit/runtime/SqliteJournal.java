@@ -16,6 +16,10 @@ public final class SqliteJournal implements AutoCloseable {
     private static final int MAX_RECORD_KEY_CHARS = 2_048;
     private static final int MAX_RECORD_PAYLOAD_CHARS = 1_048_576;
     private static final int MAX_EFFECT_PREFIX_CHARS = 64;
+    private static final String ERROR_OUTCOME_PREDICATE =
+            "outcome IN ('FAILED','FUNCTION_ERROR','BUSINESS_REJECTED','ERROR')";
+    private static final String ERROR_OR_CONFLICT_OUTCOME_PREDICATE =
+            "outcome IN ('FAILED','FUNCTION_ERROR','BUSINESS_REJECTED','ERROR','CONFLICT')";
     private final Connection db;
     private final Path directory;
     private final int apiPageSize;
@@ -333,7 +337,8 @@ public final class SqliteJournal implements AutoCloseable {
     public synchronized long errors(String id) throws SQLException {
         try (var s =
                         statement(
-                                "SELECT count(*) FROM tasks WHERE job=? AND state='DONE' AND outcome IN ('FAILED','FUNCTION_ERROR','BUSINESS_REJECTED','ERROR')",
+                                "SELECT count(*) FROM tasks WHERE job=? AND state='DONE' AND "
+                                        + ERROR_OUTCOME_PREDICATE,
                                 id);
                 var r = s.executeQuery()) {
             r.next();
@@ -541,20 +546,30 @@ public final class SqliteJournal implements AutoCloseable {
     }
 
     public synchronized List<ReportRow> errorPage(String id, long after) throws SQLException {
+        return errorPageInfo(id, after).items();
+    }
+
+    public synchronized ErrorPage errorPageInfo(String id, long after) throws SQLException {
+        if (after < 0) throw new IllegalArgumentException("after must be >= 0");
         List<ReportRow> rows = new ArrayList<>();
         try (var s =
                         statement(
-                                "SELECT seq,record_key,state,outcome FROM tasks WHERE job=? AND seq>? AND outcome IN ('FAILED','FUNCTION_ERROR','BUSINESS_REJECTED','ERROR','CONFLICT') ORDER BY seq LIMIT ?",
+                                "SELECT seq,record_key,state,outcome FROM tasks WHERE job=? AND seq>? AND "
+                                        + ERROR_OR_CONFLICT_OUTCOME_PREDICATE
+                                        + " ORDER BY seq LIMIT ?",
                                 id,
                                 after,
-                                apiPageSize);
+                                apiPageSize + 1);
                 var r = s.executeQuery()) {
             while (r.next())
                 rows.add(
                         new ReportRow(
                                 r.getLong(1), r.getString(2), r.getString(3), r.getString(4)));
         }
-        return List.copyOf(rows);
+        boolean hasMore = rows.size() > apiPageSize;
+        if (hasMore) rows.removeLast();
+        long nextAfter = rows.isEmpty() ? after : rows.getLast().sequence();
+        return new ErrorPage(List.copyOf(rows), after, nextAfter, hasMore, apiPageSize);
     }
 
     public synchronized List<Map<String, Object>> auditPage(String id, long after)
@@ -667,4 +682,7 @@ public final class SqliteJournal implements AutoCloseable {
     public record NamedEffect(String step, EffectState state, String result) {}
 
     public record ReportRow(long sequence, String key, String state, String outcome) {}
+
+    public record ErrorPage(
+            List<ReportRow> items, long after, long nextAfter, boolean hasMore, int pageSize) {}
 }

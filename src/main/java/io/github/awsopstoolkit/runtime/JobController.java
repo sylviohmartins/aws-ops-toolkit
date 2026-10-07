@@ -45,6 +45,11 @@ public final class JobController {
         return coordinator.operations();
     }
 
+    @GetMapping("/operations")
+    public List<JobCoordinator.OperationCatalogEntry> operations() {
+        return coordinator.operationCatalog();
+    }
+
     @PostMapping
     @ResponseStatus(HttpStatus.ACCEPTED)
     public Map<String, Object> create(@Valid @RequestBody JobRequest request) throws Exception {
@@ -122,14 +127,21 @@ public final class JobController {
             throws Exception {
         coordinator.status(id.toString());
         return journal.errorPage(id.toString(), after).stream()
-                .map(
-                        row ->
-                                Map.of(
-                                        "sequence", row.sequence(),
-                                        "record", mask(row.key()),
-                                        "state", row.state(),
-                                        "outcome", row.outcome()))
+                .map(JobController::errorView)
                 .toList();
+    }
+
+    @GetMapping("/{id}/errors/page")
+    public ErrorPageView errorsPage(
+            @PathVariable UUID id, @RequestParam(defaultValue = "0") long after) throws Exception {
+        coordinator.status(id.toString());
+        var page = journal.errorPageInfo(id.toString(), after);
+        return new ErrorPageView(
+                page.items().stream().map(JobController::errorView).toList(),
+                page.after(),
+                page.nextAfter(),
+                page.hasMore(),
+                page.pageSize());
     }
 
     @GetMapping("/{id}/manifest")
@@ -293,9 +305,24 @@ public final class JobController {
             throw new IOException("Insufficient temporary report disk");
     }
 
+    static Map<String, Object> errorView(SqliteJournal.ReportRow row) {
+        return Map.of(
+                "sequence", row.sequence(),
+                "record", mask(row.key()),
+                "state", row.state(),
+                "outcome", row.outcome());
+    }
+
     static String mask(String key) {
         return Masking.stableIdentifier(key);
     }
+
+    public record ErrorPageView(
+            List<Map<String, Object>> items,
+            long after,
+            long nextAfter,
+            boolean hasMore,
+            int pageSize) {}
 
     public record Approval(String hash, String reason, boolean promote) {}
 

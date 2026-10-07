@@ -53,6 +53,23 @@ try {
         if ($LASTEXITCODE -ne 0) { throw 'Could not reset deterministic laboratory fixtures.' }
     } finally { Pop-Location }
     Start-LabToolkit
+    $catalogResponse = Api GET '/operations' $null
+    $catalog =
+        if ($catalogResponse -is [System.Array]) {
+            @($catalogResponse.GetEnumerator())
+        } else {
+            @($catalogResponse)
+        }
+    $catalogTypes = @($catalog | ForEach-Object { [string]$_.type })
+    if ($catalogTypes -notcontains 'payment-repair' -or $catalogTypes -notcontains 'dynamodb-inventory') {
+        throw ('Operation catalog is missing expected laboratory workflows. Received: ' + ($catalogTypes -join ','))
+    }
+    $paymentCatalog = $catalog | Where-Object { $_.type -eq 'payment-repair' } | Select-Object -First 1
+    if (!$paymentCatalog.writes -or !$paymentCatalog.version) {
+        throw 'Operation catalog safety metadata is incomplete.'
+    }
+    $catalog | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath (Join-Path $runDirectory 'operations.json') -Encoding UTF8
+
     $dryRequest = @{
         operation='payment-repair'
         parameters=@{
@@ -116,7 +133,15 @@ try {
     $manifest = Api GET "/$($job.id)/manifest" $null
     $manifest | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath (Join-Path $runDirectory 'manifest.json') -Encoding utf8
     if ($manifest.job.hash -ne $planned.hash) { throw 'Plan changed during execution.' }
-    Write-Output "LAB SMOKE PASS: durable planning, pause, forced restart, approval, canary, promotion, CSV/XLSX and manifest. Evidence: $runDirectory"
+
+    $errorPage = Api GET "/$($job.id)/errors/page" $null
+    $errorPage | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath (Join-Path $runDirectory 'errors-page.json') -Encoding UTF8
+    if ($errorPage.after -ne 0 -or $errorPage.nextAfter -ne 0 -or $errorPage.hasMore -or
+        $errorPage.pageSize -lt 1 -or @($errorPage.items).Count -ne 0) {
+        throw 'Empty paginated error contract is inconsistent.'
+    }
+
+    Write-Output "LAB SMOKE PASS: operation catalog, durable planning, pause, forced restart, approval, canary, promotion, CSV/XLSX, manifest and paginated errors. Evidence: $runDirectory"
 } finally {
     if ($script:process -and !$script:process.HasExited) { Stop-Process -Id $script:process.Id -Force; $script:process.WaitForExit() }
     $env:TOOLKIT_CORE_LOCAL_TOKEN = $oldToken

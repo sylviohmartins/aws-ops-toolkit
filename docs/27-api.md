@@ -161,7 +161,7 @@ CSV UTF-8 com header `recordId,decision`, quoting e CRLF. Download durante execu
 | 409 | Estado incompatível, versão da definição divergente, capacidade ou orçamento de disco no preflight |
 | 503 | Falha de I/O do armazenamento local |
 
-O handler fornece `ProblemDetail` sanitizado para os erros mapeados. Nenhuma resposta inclui detalhe de credencial AWS. Não há endpoint de catálogo de operações, errors paginado, confirmação de plano, alteração de throughput ou autenticação AWS nesta versão; todos pertencem ao roadmap.
+O handler fornece `ProblemDetail` sanitizado para os erros mapeados. Nenhuma resposta inclui detalhe de credencial AWS. Este capítulo descreve principalmente o controller foundation `/api/v1/operations`; quando o runtime operacional está habilitado, `/api/v1/jobs/operations` expõe o catálogo rico de workflows e `/api/v1/jobs/{id}/errors/page` expõe paginação explícita de erros, conforme [runtime operacional](32-operational-runtime.md#api-operacional). Confirmação/aprovação de plano e tuning também pertencem ao runtime `/jobs`; autenticação AWS continua sendo preflight interno, não endpoint de login.
 
 ## Encerramento da demonstração em background
 

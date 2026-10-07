@@ -1,6 +1,6 @@
 # Runtime operacional e laboratório Docker
 
-Status conferido no código em **2026-09-22**. Este capítulo descreve o runtime em `io.github.awsopstoolkit.runtime` e o laboratório local composto por Moto e uma API HTTP sintética. Ele substitui, para essas capacidades, as descrições antigas de skeleton; os capítulos anteriores continuam sendo a arquitetura de referência. A implementação ainda não é certificação para produção nem evidência de homologação corporativa.
+Status conferido no código em **2026-10-06**. Este capítulo descreve o runtime em `io.github.awsopstoolkit.runtime` e o laboratório local composto por LocalStack 4.14.0 e uma API HTTP sintética. Ele substitui, para essas capacidades, as descrições antigas de skeleton; os capítulos anteriores continuam sendo a arquitetura de referência. A implementação ainda não é certificação para produção nem evidência de homologação corporativa.
 
 ## O que está implementado
 
@@ -85,13 +85,15 @@ Todas as rotas, inclusive Actuator, exigem `Authorization: Bearer <TOOLKIT_CORE_
 
 | Método e rota | Uso |
 | --- | --- |
-| `GET /api/v1/jobs/types` | Lista operações registradas nesta configuração. |
+| `GET /api/v1/jobs/types` | Lista apenas os nomes das operações registradas; mantido por compatibilidade. |
+| `GET /api/v1/jobs/operations` | Catálogo determinístico das operações com `type`, `version`, `writes`, chamadas estimadas por candidato e riscos declarados pelo workflow. |
 | `POST /api/v1/jobs` | Cria e inicia o planejamento; retorna `202`. |
 | `GET /api/v1/jobs/{id}` | Retorna view sanitizada: estado, hash, identidade mascarada, recursos, budgets/uso e totais; não devolve request/payload bruto. |
 | `GET /api/v1/jobs/{id}/plan?after={seq}` | Lê até 100 propostas sanitizadas com identificador mascarado e before/after controlado pela regra. |
 | `GET /api/v1/jobs/{id}/dry-run` | Após `DRY_RUN_COMPLETE`, retorna contagens, hash, recursos, chamadas estimadas, riscos e amostras before/after mascaradas. |
 | `GET /api/v1/jobs/{id}/summary` | Retorna outcomes, effects, error rate, throughput local e unknowns pendentes. |
-| `GET /api/v1/jobs/{id}/errors?after={seq}` | Retorna página sanitizada de conflitos/erros de negócio/função. |
+| `GET /api/v1/jobs/{id}/errors?after={seq}` | Retorna a lista sanitizada legada de conflitos/erros de negócio/função, limitada por `toolkit.journal.api-page-size`. |
+| `GET /api/v1/jobs/{id}/errors/page?after={seq}` | Retorna envelope paginado explícito com `items`, `after`, `nextAfter`, `hasMore` e `pageSize`; `nextAfter` permanece estável em página vazia para polling incremental. |
 | `POST /api/v1/jobs/{id}/approve` | Aprova hash/motivo e inicia canary ou promoção. |
 | `POST /api/v1/jobs/{id}/resume-plan` | Retoma apenas um planejamento ainda não selado. |
 | `POST /api/v1/jobs/{id}/pause` | Solicita pausa cooperativa. |
@@ -136,7 +138,7 @@ Se o estado chegar a `CANARY_COMPLETE`, revisar plano, audit e relatório; depoi
 
 ## Laboratório local com Docker
 
-Pré-requisitos: Docker Compose, PowerShell, JDK 25 em `JAVA_HOME` e portas locais 4566, 8091 e 8080 disponíveis. O compose fixa Moto `5.2.2`, publica apenas em loopback e monta `lab/` somente para leitura. `bootstrap.py` cria tabelas DynamoDB, filas, tópico/assinatura, buckets versionados, função Lambda e 200 pagamentos sintéticos. Nenhuma credencial real é usada; os clients do perfil `lab` aceitam somente endpoint HTTP de loopback, ambiente `LOCAL` e `toolkit.aws.enabled=false`.
+Pré-requisitos: Docker Compose, PowerShell, JDK 25 em `JAVA_HOME` e portas locais 4566, 8091 e 8080 disponíveis. O compose fixa LocalStack `4.14.0`, publica apenas em loopback e monta `lab/` somente para leitura. `bootstrap.py` cria tabelas DynamoDB, filas, tópico/assinatura, buckets versionados, função Lambda e 200 pagamentos sintéticos. Nenhuma credencial real é usada; os clients do perfil `lab` aceitam somente endpoint HTTP de loopback, ambiente `LOCAL` e `toolkit.aws.enabled=false`.
 
 O caminho recomendado é:
 
@@ -175,7 +177,7 @@ docker compose ps
 docker compose down
 ```
 
-`docker compose down` remove os containers e a rede do laboratório. Os fixtures Moto vivem apenas nos containers atuais; o journal SQLite e logs da aplicação ficam no diretório local configurado e não são removidos pelo Compose.
+`docker compose down` remove os containers e a rede do laboratório. Os fixtures LocalStack desse profile vivem apenas nos containers atuais; o journal SQLite e logs da aplicação ficam no diretório local configurado e não são removidos pelo Compose.
 
 ## Configuração do runtime
 
@@ -204,7 +206,7 @@ Continuam relevantes `toolkit.data-directory`, `toolkit.minimum-free-bytes`, `to
 | Persistência | SQLite schema 5, WAL/FULL, cursores por segmento, tarefas, efeitos, audit e contador transacional de candidatos planejados sem `COUNT(*)` global por página | Crash/power-loss no filesystem corporativo, backup aprovado, proteção/criptografia local conforme política |
 | Segurança | Loopback, bearer local, STS account/principal, allowlists exatas, write gate e aprovação expirada por tempo | IAM/SSO/Break Glass reais, segregação de aprovador, políticas e retenção corporativas |
 | Execução | `DRY_RUN`/`EXECUTE`, plano selado, before/after sanitizado, canary, promoção, pausa/cancelamento, auth pause, budgets absolutos e por taxa, estimativa de chamadas, summary e reconciliação | Múltiplos jobs, distribuição entre hosts e estimativa financeira/RCU/WCU calibrada por ambiente |
-| AWS/HTTP | Fluxos concretos e laboratório Moto/HTTP; conditions e marcadores em pontos críticos | DEV/HML reais, semântica de cada downstream, quotas, proxy/TLS e fault injection homologados |
+| AWS/HTTP | Fluxos concretos e laboratório LocalStack 4.14.0/HTTP; conditions e marcadores em pontos críticos | DEV/HML reais, semântica de cada downstream, quotas, proxy/TLS e fault injection homologados |
 | Entrega entre serviços | Ledger impede replay cego de efeito confirmado e expõe estado incerto | Não há transação distribuída nem exactly-once; SNS/SQS/Lambda ambíguos podem exigir evidência externa |
 | Rollback | Compensação DynamoDB condicionada e auditável como novo job | Eventos já emitidos não são desfeitos; rollback universal continua proibido |
 | Relatórios | Manifesto, audit, plano, CSV e XLSX streaming | Política de colunas, proteção de pre-images, upload corporativo e cadeia de custódia |
