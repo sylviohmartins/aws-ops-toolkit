@@ -1,6 +1,8 @@
 package io.github.awsopstoolkit.runtime;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -16,6 +18,9 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.AfterEach;
@@ -79,6 +84,99 @@ class PaymentGatewayTest {
                     });
             assertEquals(1, requests.get());
             assertEquals(2, fixture.journal().job("job").calls());
+        }
+    }
+
+    @Test
+    void interruptionDuringRetryAfterStopsWithoutSecondRequest() throws Exception {
+        var firstResponse = new CountDownLatch(1);
+        respond(
+                exchange -> {
+                    send(exchange, 429, "{}", "Retry-After", "5");
+                    firstResponse.countDown();
+                });
+        server.start();
+
+        try (var fixture = fixture()) {
+            var failure = new AtomicReference<Throwable>();
+            var interrupted = new AtomicBoolean();
+            Thread worker =
+                    Thread.ofVirtual()
+                            .unstarted(
+                                    () -> {
+                                        try {
+                                            fixture.gateway().get(fixture.context(), "cancel-wait");
+                                        } catch (Throwable thrown) {
+                                            failure.set(thrown);
+                                        } finally {
+                                            interrupted.set(Thread.currentThread().isInterrupted());
+                                        }
+                                    });
+
+            worker.start();
+            assertTrue(firstResponse.await(2, TimeUnit.SECONDS));
+            long retryDeadline = System.nanoTime() + Duration.ofSeconds(2).toNanos();
+            while (fixture.journal().job("job").retries() < 1
+                    && System.nanoTime() < retryDeadline) {
+                Thread.sleep(10);
+            }
+            assertEquals(1, fixture.journal().job("job").retries());
+
+            worker.interrupt();
+            worker.join(2_000);
+
+            assertFalse(worker.isAlive());
+            var stopped = assertInstanceOf(JobStopped.class, failure.get());
+            assertEquals(JobState.INTERRUPTED, stopped.state());
+            assertTrue(interrupted.get());
+            assertEquals(1, requests.get());
+        }
+    }
+
+    @Test
+    void interruptionDuringNormalBackoffStopsWithoutSecondRequest() throws Exception {
+        var firstResponse = new CountDownLatch(1);
+        respond(
+                exchange -> {
+                    send(exchange, 503, "{}");
+                    firstResponse.countDown();
+                });
+        server.start();
+
+        try (var fixture = fixture(Duration.ofSeconds(10), Duration.ofSeconds(5))) {
+            var failure = new AtomicReference<Throwable>();
+            var interrupted = new AtomicBoolean();
+            Thread worker =
+                    Thread.ofVirtual()
+                            .unstarted(
+                                    () -> {
+                                        try {
+                                            fixture.gateway()
+                                                    .get(fixture.context(), "cancel-backoff");
+                                        } catch (Throwable thrown) {
+                                            failure.set(thrown);
+                                        } finally {
+                                            interrupted.set(Thread.currentThread().isInterrupted());
+                                        }
+                                    });
+
+            worker.start();
+            assertTrue(firstResponse.await(2, TimeUnit.SECONDS));
+            long retryDeadline = System.nanoTime() + Duration.ofSeconds(2).toNanos();
+            while (fixture.journal().job("job").retries() < 1
+                    && System.nanoTime() < retryDeadline) {
+                Thread.sleep(10);
+            }
+            assertEquals(1, fixture.journal().job("job").retries());
+
+            worker.interrupt();
+            worker.join(2_000);
+
+            assertFalse(worker.isAlive());
+            var stopped = assertInstanceOf(JobStopped.class, failure.get());
+            assertEquals(JobState.INTERRUPTED, stopped.state());
+            assertTrue(interrupted.get());
+            assertEquals(1, requests.get());
         }
     }
 
@@ -227,6 +325,10 @@ class PaymentGatewayTest {
     }
 
     private Fixture fixture(Duration timeout) throws Exception {
+        return fixture(timeout, Duration.ofMillis(100));
+    }
+
+    private Fixture fixture(Duration timeout, Duration retryBaseBackoff) throws Exception {
         var settings =
                 RuntimeTestFixtures.runtime(
                         false,
@@ -253,7 +355,8 @@ class PaymentGatewayTest {
                         request,
                         journal,
                         policy,
-                        RuntimeTestFixtures.limiter(1, 1000),
+                        new DispatchLimiter(
+                                1, 1000, 20, 5, Duration.ofSeconds(10), retryBaseBackoff),
                         new AtomicReference<>(),
                         Set.of(endpoint.toString()),
                         json,
