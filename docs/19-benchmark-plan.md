@@ -110,6 +110,8 @@ Em 01/10/2026, a medição **fresh** de 5M, sem reaproveitar checkpoints, conclu
 
 Em 02/10/2026, uma execução de retomada sobre os checkpoints já completos de 5M confirmou o caminho de resume: `128/128` segmentos foram reutilizados, `checkpointMode=RESUMED`, `attempts=2` e a invocação adicional não precisou refazer o scan. O artefato `20261002-013450-91c15e47-5000000.json` é evidência funcional de retomada/idempotência e **não** substitui o resultado fresh de 01/10 como métrica de throughput.
 
+Os diretórios em `benchmark-results/localstack/persistent/checkpoint-archives/` preservam snapshots sintéticos intermediários dos experimentos de 5M como evidência histórica. Eles não são usados pelo resume atual: checkpoints vivos ficam em `target/localstack-performance/<mode>/projection-checkpoints/...`, fora do Git, e o harness exige identidade versionada antes de reutilizá-los. O README do diretório documenta o propósito e o conteúdo de cada snapshot.
+
 Com 5M itens materializados, o arquivo principal do DynamoDB Local ocupa 10.804.543.488 bytes (~10,06 GiB), ou ~2.160,91 bytes físicos por item. Projeção linear: 10M ~20,13 GiB, 25M ~50,31 GiB e 100M ~201,25 GiB somente para o estado DynamoDB, sem contar backup, WAL/temporários, cópia offline e margem operacional.
 
 ### Higiene do armazenamento Docker/WSL
