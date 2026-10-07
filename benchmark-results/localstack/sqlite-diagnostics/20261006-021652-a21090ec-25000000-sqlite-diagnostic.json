@@ -1,0 +1,77 @@
+{
+  "kind": "LOCALSTACK_SQLITE_BACKING_STORE_DIAGNOSTIC",
+  "readOnly": true,
+  "managedDynamoDbEquivalent": false,
+  "cacheControl": "NONE",
+  "coldCacheGuaranteed": false,
+  "operationOrder": [
+    "count",
+    "pointLookup",
+    "sequentialObjectJson"
+  ],
+  "warning": "SQLite results diagnose DynamoDB Local's backing store only; they are not an access strategy or performance projection for AWS DynamoDB.",
+  "database": "/data/state/dynamodb/123456789012useast1_us-east-1.db",
+  "databaseBytes": 53575275520,
+  "table": "lab-perf-v3-01-rich-uniform",
+  "targetRecords": 25000000,
+  "gitCommit": "a21090ec0ed930a8b3cc61add58fb934730766bc",
+  "gitDirty": false,
+  "schema": "CREATE TABLE \"lab-perf-v3-01-rich-uniform\" (hashKey TEXT DEFAULT NULL, rangeKey TEXT DEFAULT NULL, hashValue BLOB NOT NULL, rangeValue BLOB NOT NULL, itemSize INTEGER DEFAULT 0, ObjectJSON BLOB NOT NULL, PRIMARY KEY(hashKey, rangeKey))",
+  "indexes": [
+    {
+      "name": "lab-perf-v3-01-rich-uniform*HVI",
+      "sql": "CREATE INDEX \"lab-perf-v3-01-rich-uniform*HVI\" ON \"lab-perf-v3-01-rich-uniform\" (hashValue)"
+    },
+    {
+      "name": "sqlite_autoindex_lab-perf-v3-01-rich-uniform_1",
+      "sql": null
+    }
+  ],
+  "plans": {
+    "count": [
+      {
+        "id": 4,
+        "parent": 0,
+        "notUsed": 0,
+        "detail": "SCAN lab-perf-v3-01-rich-uniform USING COVERING INDEX lab-perf-v3-01-rich-uniform*HVI"
+      }
+    ],
+    "pointLookup": [
+      {
+        "id": 3,
+        "parent": 0,
+        "notUsed": 0,
+        "detail": "SEARCH lab-perf-v3-01-rich-uniform USING INDEX sqlite_autoindex_lab-perf-v3-01-rich-uniform_1 (hashKey=? AND rangeKey=?)"
+      }
+    ],
+    "sequentialLimit1000": [
+      {
+        "id": 3,
+        "parent": 0,
+        "notUsed": 0,
+        "detail": "SCAN lab-perf-v3-01-rich-uniform"
+      }
+    ]
+  },
+  "count": {
+    "rows": 25000000,
+    "elapsedSeconds": 1.1362395889955224
+  },
+  "pointLookup": {
+    "samples": 1000,
+    "hits": 1000,
+    "averageMillis": 0.016805385000000003,
+    "p50Millis": 0.012557,
+    "p95Millis": 0.036662,
+    "p99Millis": 0.050052,
+    "maxMillis": 0.090274
+  },
+  "sequentialObjectJson": {
+    "limit": 100000,
+    "rows": 100000,
+    "payloadBytes": 178712856,
+    "elapsedSeconds": 0.139009315003932,
+    "rowsPerSecond": 719376.2518516937,
+    "mebibytesPerSecond": 1226.060719556727
+  }
+}

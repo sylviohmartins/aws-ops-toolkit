@@ -4,7 +4,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import io.github.awsopstoolkit.configuration.SqsProperties;
 import jakarta.validation.Validator;
 import java.util.Set;
 import java.util.stream.Stream;
@@ -39,7 +38,8 @@ class WorkflowExtensionRegistrationTest {
                                 2,
                                 100),
                         RuntimeTestFixtures.http(null, Set.of()),
-                        new SqsProperties(java.time.Duration.ofSeconds(120)),
+                        RuntimeTestFixtures.s3(),
+                        RuntimeTestFixtures.sqs(),
                         mock(ExecutionPolicy.class),
                         mock(DynamoDbClient.class),
                         mock(SqsClient.class),

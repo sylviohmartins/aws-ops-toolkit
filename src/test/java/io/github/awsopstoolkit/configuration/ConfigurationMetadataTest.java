@@ -22,7 +22,10 @@ class ConfigurationMetadataTest {
                     metadata.contains(
                             "\"name\": \"toolkit.operations.estimated-bytes-per-record\""));
             assertTrue(metadata.contains("\"name\": \"toolkit.dynamodb.tables\""));
+            assertTrue(metadata.contains("\"name\": \"toolkit.journal.busy-timeout\""));
             assertTrue(metadata.contains("\"name\": \"toolkit.report.flush-every-records\""));
+            assertTrue(metadata.contains("\"name\": \"toolkit.s3.multipart-part-size\""));
+            assertTrue(metadata.contains("\"name\": \"toolkit.sqs.receive-wait-time\""));
 
             assertPropertyDefault(metadata, "toolkit.core.max-concurrent-operations", "2");
             assertPropertyDefault(metadata, "toolkit.core.page-size", "100");

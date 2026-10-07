@@ -17,7 +17,7 @@ class CoordinatorReconciliationTest {
 
     @Test
     void unknownValueProducingEffectCannotBeConfirmedWithFabricatedResult() throws Exception {
-        try (var journal = new SqliteJournal(directory);
+        try (var journal = RuntimeTestFixtures.journal(directory);
                 var validation = Validation.buildDefaultValidatorFactory()) {
             long task = unknown(journal);
             var coordinator =
@@ -56,7 +56,7 @@ class CoordinatorReconciliationTest {
 
     @Test
     void cancellationStillAllowsResolvingUnknownEffectWithoutRestartingJob() throws Exception {
-        try (var journal = new SqliteJournal(directory);
+        try (var journal = RuntimeTestFixtures.journal(directory);
                 var validation = Validation.buildDefaultValidatorFactory()) {
             long task = unknown(journal);
             var coordinator =
@@ -72,7 +72,9 @@ class CoordinatorReconciliationTest {
                 coordinator.reconcile(
                         "job", task, "multipart-create", false, "LAB confirmed no upload exists");
                 assertEquals(JobState.CANCELLED, journal.job("job").state());
-                assertEquals("NOT_SENT", journal.effect("job", task, "multipart-create").state());
+                assertEquals(
+                        EffectState.NOT_SENT,
+                        journal.effect("job", task, "multipart-create").state());
                 assertThrows(
                         IllegalArgumentException.class,
                         () ->
@@ -96,7 +98,7 @@ class CoordinatorReconciliationTest {
                 1);
         journal.seal("job");
         long task = journal.pending("job", 1).getFirst().sequence();
-        journal.effect("job", task, "multipart-create", "UNKNOWN", "");
+        journal.effect("job", task, "multipart-create", EffectState.UNKNOWN, "");
         journal.state("job", JobState.RECONCILIATION_REQUIRED);
         return task;
     }

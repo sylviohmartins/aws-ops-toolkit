@@ -244,7 +244,7 @@ class PaymentGatewayTest {
                                 ToolkitProperties.Environment.LOCAL, directory, false),
                         RuntimeTestFixtures.aws("123456789012"),
                         fakeSts());
-        var journal = new SqliteJournal(directory);
+        var journal = RuntimeTestFixtures.journal(directory);
         journal.create("job", "{}", "1", policy.identity(), 1000);
         var request = new JobRequest("test", json.readTree("{}"), 1, 10, 30, 1, 0, 1, false, false);
         var context =

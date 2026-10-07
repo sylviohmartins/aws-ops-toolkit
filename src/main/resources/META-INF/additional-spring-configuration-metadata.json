@@ -31,6 +31,10 @@
     {"name":"toolkit.http.max-response-body","type":"org.springframework.util.unit.DataSize","description":"Maximum downstream HTTP response body buffered in memory."},
     {"name":"toolkit.http.max-retry-after","type":"java.time.Duration","description":"Largest Retry-After delay accepted before the operation pauses instead."},
 
+    {"name":"toolkit.journal.api-page-size","type":"java.lang.Integer","description":"Maximum row count returned by journal-backed plan/error API pages."},
+    {"name":"toolkit.journal.busy-timeout","type":"java.time.Duration","description":"Maximum SQLite wait for a locked local database before failing instead of waiting indefinitely."},
+    {"name":"toolkit.journal.report-window-size","type":"java.lang.Integer","description":"Bounded row window fetched from SQLite while streaming reports and audit pages."},
+
     {"name":"toolkit.operations.enabled","type":"java.lang.Boolean","description":"Enables the durable operational runtime."},
     {"name":"toolkit.operations.healthy-responses-before-increase","type":"java.lang.Integer","description":"Healthy response streak required before AIMD increases rate and concurrency."},
     {"name":"toolkit.operations.circuit-failures-before-open","type":"java.lang.Integer","description":"Consecutive adaptive failures required before dispatch pauses through the local circuit gate."},
@@ -59,6 +63,14 @@
     {"name":"toolkit.report.xlsx-estimated-bytes-per-row","type":"java.lang.Long","description":"Conservative disk-space estimate per XLSX row used by preflight."},
     {"name":"toolkit.report.protect-spreadsheet-formulas","type":"java.lang.Boolean","description":"Prefixes formula-like CSV cells to mitigate spreadsheet formula injection."},
 
+    {"name":"toolkit.s3.multipart-part-size","type":"org.springframework.util.unit.DataSize","description":"Minimum S3 multipart-copy part size before increasing it to stay within the service part-count limit."},
+    {"name":"toolkit.s3.stream-buffer-size","type":"org.springframework.util.unit.DataSize","description":"Bounded local buffer used by streaming S3 downloads."},
+
+    {"name":"toolkit.sqs.acknowledgement-lease-reserve","type":"java.time.Duration","description":"Remaining visibility lease required before acknowledging a processed SQS message."},
+    {"name":"toolkit.sqs.poison-receive-count","type":"java.lang.Integer","description":"Default approximate receive-count threshold that prevents acknowledgement/replay of likely poison messages; an operation may override it explicitly."},
+    {"name":"toolkit.sqs.receipt-reacquire-attempts","type":"java.lang.Integer","description":"Maximum bounded attempts to reacquire a fresh receipt handle after a lease becomes stale."},
+    {"name":"toolkit.sqs.receipt-reuse-lease-reserve","type":"java.time.Duration","description":"Remaining visibility lease required before reusing a cached receipt handle."},
+    {"name":"toolkit.sqs.receive-wait-time","type":"java.time.Duration","description":"SQS long-poll wait time for explicit receive workflows."},
     {"name":"toolkit.sqs.visibility-timeout","type":"java.time.Duration","description":"Visibility lease used by explicit SQS receive workflows."}
   ]
 }

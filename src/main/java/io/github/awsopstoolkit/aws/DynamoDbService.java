@@ -107,6 +107,29 @@ public final class DynamoDbService {
             ScanPageConsumer pageConsumer,
             ScanCheckpointConsumer checkpointConsumer)
             throws Exception {
+        return parallelScan(
+                template,
+                totalSegments,
+                maxConcurrentSegments,
+                maxPagesPerSegment,
+                resume,
+                cancelled,
+                pageConsumer,
+                checkpointConsumer,
+                (segment, latencyNanos, scannedCount, returnedCount) -> {});
+    }
+
+    public ScanSummary parallelScan(
+            ScanRequest template,
+            int totalSegments,
+            int maxConcurrentSegments,
+            long maxPagesPerSegment,
+            Map<Integer, SegmentCheckpoint> resume,
+            BooleanSupplier cancelled,
+            ScanPageConsumer pageConsumer,
+            ScanCheckpointConsumer checkpointConsumer,
+            ScanCallObserver callObserver)
+            throws Exception {
         requirePages(maxPagesPerSegment);
         if (totalSegments < 1
                 || totalSegments > DynamoLimits.MAX_TOTAL_SCAN_SEGMENTS
@@ -159,7 +182,8 @@ public final class DynamoDbService {
                                                                 checkpoint,
                                                                 cancelled,
                                                                 pageConsumer,
-                                                                checkpointConsumer));
+                                                                checkpointConsumer,
+                                                                callObserver));
                                     }
                                     return summary;
                                 }));
@@ -190,7 +214,8 @@ public final class DynamoDbService {
             SegmentCheckpoint resume,
             BooleanSupplier cancelled,
             ScanPageConsumer pageConsumer,
-            ScanCheckpointConsumer checkpointConsumer)
+            ScanCheckpointConsumer checkpointConsumer,
+            ScanCallObserver callObserver)
             throws Exception {
         Map<String, AttributeValue> cursor = resume == null ? Map.of() : resume.nextStartKey();
         ScanSummary result = ScanSummary.empty();
@@ -204,8 +229,11 @@ public final class DynamoDbService {
                             .limit(pageLimit(template.limit()))
                             .returnConsumedCapacity(ReturnConsumedCapacity.INDEXES)
                             .build();
+            long requestStarted = System.nanoTime();
             ScanResponse response = gate.call(() -> client.scan(request));
+            long latencyNanos = System.nanoTime() - requestStarted;
             checkCancelled(cancelled);
+            callObserver.accept(segment, latencyNanos, response.scannedCount(), response.count());
             pageConsumer.accept(segment, response);
             cursor = Map.copyOf(response.lastEvaluatedKey());
             checkpointConsumer.save(
@@ -383,6 +411,12 @@ public final class DynamoDbService {
     @FunctionalInterface
     public interface ScanPageConsumer {
         void accept(int segment, ScanResponse page) throws Exception;
+    }
+
+    @FunctionalInterface
+    public interface ScanCallObserver {
+        void accept(int segment, long latencyNanos, int scannedCount, int returnedCount)
+                throws Exception;
     }
 
     @FunctionalInterface

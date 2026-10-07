@@ -1,0 +1,119 @@
+{
+  "schemaVersion" : 1,
+  "scope" : "LOCALSTACK_DYNAMODB",
+  "mode" : "IN_MEMORY",
+  "generatedAt" : "2026-09-23T15:24:19.123525200Z",
+  "endpoint" : "http://127.0.0.1:4568",
+  "account" : "123456789012",
+  "region" : "us-east-1",
+  "baselineRecordsPerTable" : 100,
+  "primaryRecords" : 1000000,
+  "scaleOnly" : true,
+  "deepBenchmark" : false,
+  "parallelOnly" : true,
+  "getSamples" : 100,
+  "datasetPreparedExternally" : true,
+  "seedManifest" : {
+    "primaryRecords" : 1000000,
+    "elapsedSeconds" : 16.09764210798312,
+    "endpoint" : "http://aws-perf-memory:4566",
+    "checkpointEveryBatches" : 100,
+    "scope" : "LOCALSTACK_DYNAMODB_FIXTURE",
+    "tables" : [ {
+      "table" : "lab-perf-v2-01-small-uniform",
+      "targetRecords" : 1000000,
+      "recordsWrittenThisRun" : 62500,
+      "retryRounds" : 0,
+      "elapsedSeconds" : 14.993720549042337,
+      "recordsPerSecond" : 4168.411689118211,
+      "payloadBytes" : 512
+    }, {
+      "table" : "lab-perf-v2-02-small-skewed",
+      "targetRecords" : 100,
+      "recordsWrittenThisRun" : 0,
+      "retryRounds" : 0,
+      "elapsedSeconds" : 0.06330580892972648,
+      "recordsPerSecond" : 0.0,
+      "payloadBytes" : 512
+    }, {
+      "table" : "lab-perf-v2-03-medium-uniform",
+      "targetRecords" : 100,
+      "recordsWrittenThisRun" : 0,
+      "retryRounds" : 0,
+      "elapsedSeconds" : 0.0636152740335092,
+      "recordsPerSecond" : 0.0,
+      "payloadBytes" : 2048
+    }, {
+      "table" : "lab-perf-v2-04-medium-skewed",
+      "targetRecords" : 100,
+      "recordsWrittenThisRun" : 0,
+      "retryRounds" : 0,
+      "elapsedSeconds" : 0.05570274998899549,
+      "recordsPerSecond" : 0.0,
+      "payloadBytes" : 2048
+    }, {
+      "table" : "lab-perf-v2-05-large-uniform",
+      "targetRecords" : 100,
+      "recordsWrittenThisRun" : 0,
+      "retryRounds" : 0,
+      "elapsedSeconds" : 0.051852723001502454,
+      "recordsPerSecond" : 0.0,
+      "payloadBytes" : 8192
+    }, {
+      "table" : "lab-perf-v2-06-low-selectivity",
+      "targetRecords" : 100,
+      "recordsWrittenThisRun" : 0,
+      "retryRounds" : 0,
+      "elapsedSeconds" : 0.04881630197633058,
+      "recordsPerSecond" : 0.0,
+      "payloadBytes" : 1024
+    }, {
+      "table" : "lab-perf-v2-07-high-cardinality",
+      "targetRecords" : 100,
+      "recordsWrittenThisRun" : 0,
+      "retryRounds" : 0,
+      "elapsedSeconds" : 0.048042567912489176,
+      "recordsPerSecond" : 0.0,
+      "payloadBytes" : 1024
+    }, {
+      "table" : "lab-perf-v2-08-hot-key",
+      "targetRecords" : 100,
+      "recordsWrittenThisRun" : 0,
+      "retryRounds" : 0,
+      "elapsedSeconds" : 0.057855199091136456,
+      "recordsPerSecond" : 0.0,
+      "payloadBytes" : 1024
+    } ],
+    "mode" : "IN_MEMORY",
+    "seedWorkers" : 8,
+    "account" : "123456789012",
+    "baselineRecordsPerTable" : 100
+  },
+  "pageSize" : 5000,
+  "scanSegments" : 64,
+  "scanWorkers" : 32,
+  "httpConnections" : 128,
+  "httpSocketTimeoutSeconds" : 30,
+  "apiAttemptTimeoutSeconds" : 35,
+  "apiTimeoutSeconds" : 40,
+  "tables" : [ ],
+  "primaryScale" : {
+    "table" : "lab-perf-v2-01-small-uniform",
+    "recordsTarget" : 1000000,
+    "datasetPreparedExternally" : true,
+    "parallelScan" : {
+      "scanned" : 1000000,
+      "returned" : 1000000,
+      "requests" : 596,
+      "elapsedSeconds" : 63.6848466,
+      "scannedPerSecond" : 15702.322505083965,
+      "returnedPerSecond" : 15702.322505083965,
+      "bytesRead" : 593780000,
+      "megabytesPerSecond" : 8.89179712015987,
+      "segments" : 64,
+      "workers" : 32,
+      "completedSegments" : 64
+    }
+  },
+  "limitations" : [ "LocalStack performance is not DynamoDB AWS performance.", "RCU/WCU, physical partitions, adaptive capacity and AWS network are not reproduced.", "Eight benchmark schemas are synthetic because eight production table schemas are not present in this repository." ]
+}

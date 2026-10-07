@@ -14,7 +14,7 @@ public record ToolkitProperties(
         @NotNull @DefaultValue(".aws-ops-toolkit/data") Path dataDirectory,
         @NotNull @DefaultValue("1GB") DataSize minimumFreeSpace,
         @DefaultValue("2") @Min(1) @Max(4) int maxConcurrentOperations,
-        @DefaultValue("100") @Min(1) @Max(1000) int pageSize,
+        @DefaultValue("100") @Min(1) @Max(CoreLimits.MAX_PAGE_SIZE) int pageSize,
         @DefaultValue("false") boolean writeEnabled,
         @NotBlank @Size(min = 32, max = 256) String localToken) {
     public enum Environment {

@@ -29,7 +29,7 @@ class ReportSafetyTest {
         var settings =
                 RuntimeTestFixtures.runtime(
                         true, null, Set.of("table"), Set.of("principal"), 10, 1, 10);
-        try (var journal = new SqliteJournal(directory);
+        try (var journal = RuntimeTestFixtures.journal(directory);
                 var validation = Validation.buildDefaultValidatorFactory();
                 var threads = Executors.newVirtualThreadPerTaskExecutor()) {
             var coordinator =

@@ -1,24 +1,114 @@
 name: aws-ops-toolkit
 services:
   aws:
-    image: motoserver/moto:5.2.2
-    entrypoint: [python, /lab/moto_server.py]
+    image: localstack/localstack:4.14.0
     ports:
-      - "127.0.0.1:4566:5000"
+      - "127.0.0.1:4566:4566"
     environment:
-      MOTO_PORT: "5000"
-      MOTO_DOCKER_NETWORK_NAME: aws-ops-toolkit-lab
+      SERVICES: "sts,iam,dynamodb,sqs,sns,s3,lambda"
+      PERSISTENCE: "1"
+      SNAPSHOT_SAVE_STRATEGY: "${SNAPSHOT_SAVE_STRATEGY:-ON_SHUTDOWN}"
+      DYNAMODB_IN_MEMORY: "${DYNAMODB_IN_MEMORY:-0}"
+      DYNAMODB_HEAP_SIZE: "${DYNAMODB_HEAP_SIZE:-1024m}"
+      LS_LOG: "${LS_LOG:-warn}"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./lab:/lab:ro
+      - ./.localstack:/var/lib/localstack
     networks: [lab]
     healthcheck:
-      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://localhost:5000/moto-api/')"]
+      test: [CMD-SHELL, "curl -fsS http://localhost:4566/_localstack/health >/dev/null || exit 1"]
       interval: 3s
       timeout: 2s
-      retries: 30
-    mem_limit: 1g
-    cpus: 2
+      retries: 60
+    mem_limit: 4g
+    cpus: 6
+  aws-perf-persistent:
+    profiles: [performance-persistent]
+    image: localstack/localstack:4.14.0
+    ports:
+      - "127.0.0.1:4569:4566"
+    environment:
+      SERVICES: "sts,dynamodb"
+      PERSISTENCE: "1"
+      SNAPSHOT_SAVE_STRATEGY: "${SNAPSHOT_SAVE_STRATEGY:-ON_SHUTDOWN}"
+      DYNAMODB_IN_MEMORY: "0"
+      DYNAMODB_HEAP_SIZE: "${DYNAMODB_HEAP_SIZE:-2048m}"
+      DYNAMODB_OPTIMIZE_DB_BEFORE_STARTUP: "${DYNAMODB_OPTIMIZE_DB_BEFORE_STARTUP:-0}"
+      LS_LOG: "${LS_LOG:-warn}"
+    volumes:
+      - localstack-performance-persistent:/var/lib/localstack
+    networks: [lab]
+    healthcheck:
+      test: [CMD-SHELL, "curl -fsS http://localhost:4566/_localstack/health >/dev/null || exit 1"]
+      interval: 3s
+      timeout: 2s
+      retries: 60
+    mem_limit: 5g
+    cpus: 6
+  seed-persistent:
+    profiles: [performance-persistent]
+    image: localstack/localstack:4.14.0
+    entrypoint: [python, /lab/seed_dynamodb.py]
+    environment:
+      LAB_PERF_ENDPOINT: http://aws-perf-persistent:4566
+      LAB_PERF_RECORDS: "${LAB_PERF_RECORDS:-1000}"
+      LAB_PERF_PRIMARY_RECORDS: "${LAB_PERF_PRIMARY_RECORDS:-10000}"
+      LAB_PERF_SEED_WORKERS: "${LAB_PERF_SEED_WORKERS:-8}"
+      LAB_PERF_CHECKPOINT_EVERY_BATCHES: "${LAB_PERF_CHECKPOINT_EVERY_BATCHES:-100}"
+      LAB_PERF_MODE: PERSISTENT
+      LAB_PERF_STATE_DIR: /state
+    volumes:
+      - ./lab:/lab:ro
+      - ./.aws-ops-toolkit/localstack-performance-persistent:/state
+    networks: [lab]
+    depends_on:
+      aws-perf-persistent:
+        condition: service_healthy
+    restart: "no"
+    mem_limit: 768m
+    cpus: 4
+  aws-perf-memory:
+    profiles: [performance-memory]
+    image: localstack/localstack:4.14.0
+    ports:
+      - "127.0.0.1:4568:4566"
+    environment:
+      SERVICES: "sts,dynamodb"
+      PERSISTENCE: "0"
+      DYNAMODB_IN_MEMORY: "1"
+      DYNAMODB_HEAP_SIZE: "${DYNAMODB_HEAP_SIZE:-1024m}"
+      LS_LOG: "${LS_LOG:-warn}"
+    networks: [lab]
+    healthcheck:
+      test: [CMD-SHELL, "curl -fsS http://localhost:4566/_localstack/health >/dev/null || exit 1"]
+      interval: 3s
+      timeout: 2s
+      retries: 60
+    mem_limit: 4g
+    cpus: 6
+  seed-memory:
+    profiles: [performance-memory]
+    image: localstack/localstack:4.14.0
+    entrypoint: [python, /lab/seed_dynamodb.py]
+    environment:
+      LAB_PERF_ENDPOINT: http://aws-perf-memory:4566
+      LAB_PERF_RECORDS: "${LAB_PERF_RECORDS:-1000}"
+      LAB_PERF_PRIMARY_RECORDS: "${LAB_PERF_PRIMARY_RECORDS:-10000}"
+      LAB_PERF_SEED_WORKERS: "${LAB_PERF_SEED_WORKERS:-8}"
+      LAB_PERF_CHECKPOINT_EVERY_BATCHES: "${LAB_PERF_CHECKPOINT_EVERY_BATCHES:-100}"
+      LAB_PERF_MODE: IN_MEMORY
+      LAB_PERF_STATE_DIR: /state
+    volumes:
+      - ./lab:/lab:ro
+      - ./.aws-ops-toolkit/localstack-performance-memory:/state
+    networks: [lab]
+    depends_on:
+      aws-perf-memory:
+        condition: service_healthy
+    restart: "no"
+    mem_limit: 768m
+    cpus: 4
   payments:
     image: python:3.13.7-slim
     command: [python, /lab/payments.py]
@@ -32,3 +122,5 @@ services:
 networks:
   lab:
     name: aws-ops-toolkit-lab
+volumes:
+  localstack-performance-persistent:

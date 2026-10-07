@@ -15,3 +15,5 @@ reports/
 *.hprof
 .tools/
 *.local.yml
+.localstack/
+lab/__pycache__/

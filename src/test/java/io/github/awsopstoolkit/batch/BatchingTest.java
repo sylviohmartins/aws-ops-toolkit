@@ -27,6 +27,20 @@ class BatchingTest {
     }
 
     @Test
+    void processesOneMillionGeneratedItemsWithoutMaterializingTheDataset() {
+        var maxObservedBatch = new java.util.concurrent.atomic.AtomicInteger();
+        var result =
+                Batching.forEachBatch(
+                        () -> java.util.stream.IntStream.range(0, 1_000_000).boxed().iterator(),
+                        1_000,
+                        batch -> maxObservedBatch.accumulateAndGet(batch.size(), Math::max));
+
+        assertEquals(1_000_000, result.items());
+        assertEquals(1_000, result.batches());
+        assertEquals(1_000, maxObservedBatch.get());
+    }
+
+    @Test
     void rejectsNonPositiveBatchSize() {
         org.junit.jupiter.api.Assertions.assertThrows(
                 IllegalArgumentException.class,

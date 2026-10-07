@@ -18,8 +18,6 @@ import tools.jackson.databind.ObjectMapper;
 /** Atomic snapshots for the deterministic demo, NOT a production write ledger. */
 @Component
 public final class FileCheckpointStore implements AutoCloseable {
-    private static final int MAX_CHECKPOINT_PAGE_SIZE = 1_000;
-
     private final Path root;
     private final ObjectMapper mapper;
     private final FileChannel lockChannel;
@@ -67,7 +65,8 @@ public final class FileCheckpointStore implements AutoCloseable {
                 || result.definitionVersion().isBlank()
                 || !id.equals(result.operationId())
                 || result.pageSize() < 1
-                || result.pageSize() > MAX_CHECKPOINT_PAGE_SIZE
+                || result.pageSize()
+                        > io.github.awsopstoolkit.configuration.CoreLimits.MAX_PAGE_SIZE
                 || result.total() < 1
                 || result.total() > SyntheticOperationLimits.MAX_RECORDS
                 || result.cursor() < 0

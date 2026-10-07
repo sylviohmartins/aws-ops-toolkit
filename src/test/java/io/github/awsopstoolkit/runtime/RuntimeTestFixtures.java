@@ -2,8 +2,10 @@ package io.github.awsopstoolkit.runtime;
 
 import io.github.awsopstoolkit.configuration.*;
 import io.github.awsopstoolkit.report.CsvReportWriterFactory;
+import java.io.IOException;
 import java.net.URI;
 import java.nio.file.Path;
+import java.sql.SQLException;
 import java.time.Duration;
 import java.util.Set;
 import org.springframework.util.unit.DataSize;
@@ -96,7 +98,25 @@ final class RuntimeTestFixtures {
     }
 
     static SqsProperties sqs() {
-        return new SqsProperties(Duration.ofSeconds(120));
+        return new SqsProperties(
+                Duration.ofSeconds(120),
+                Duration.ofSeconds(1),
+                3,
+                5,
+                Duration.ofSeconds(5),
+                Duration.ofSeconds(40));
+    }
+
+    static S3Properties s3() {
+        return new S3Properties(DataSize.ofKilobytes(64), DataSize.ofMegabytes(8));
+    }
+
+    static JournalProperties journalProperties() {
+        return new JournalProperties(Duration.ofSeconds(5), 100, 500);
+    }
+
+    static SqliteJournal journal(Path directory) throws SQLException, IOException {
+        return new SqliteJournal(directory, journalProperties());
     }
 
     static ReportProperties report() {

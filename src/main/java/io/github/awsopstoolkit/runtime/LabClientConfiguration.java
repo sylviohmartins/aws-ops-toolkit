@@ -24,8 +24,8 @@ import software.amazon.awssdk.services.sts.StsClient;
 @ConditionalOnProperty(name = "toolkit.operations.lab-endpoint")
 public class LabClientConfiguration {
     private static final int SDK_MAX_ATTEMPTS = 1;
-    private static final String EMULATOR_ACCESS_KEY = "testing";
-    private static final String EMULATOR_SECRET_KEY = "testing";
+    private static final String EMULATOR_ACCESS_KEY = "123456789012";
+    private static final String EMULATOR_SECRET_KEY = "test";
 
     private final URI endpoint;
     private final AwsProperties aws;

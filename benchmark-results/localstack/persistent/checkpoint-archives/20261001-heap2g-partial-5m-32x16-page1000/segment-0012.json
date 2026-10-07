@@ -1,0 +1,1 @@
+{"table":"lab-perf-v3-01-rich-uniform","recordsTarget":5000000,"pageSize":1000,"segment":12,"totalSegments":32,"nextStartKey":{"sk":"record-000002393244","pk":"tenant-00244"},"completed":false,"pages":45,"examined":37394,"returned":37394,"bytes":5870858}

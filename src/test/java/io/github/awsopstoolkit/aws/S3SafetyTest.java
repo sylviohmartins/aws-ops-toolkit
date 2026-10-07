@@ -2,8 +2,10 @@ package io.github.awsopstoolkit.aws;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import io.github.awsopstoolkit.configuration.S3Properties;
 import java.lang.reflect.Proxy;
 import org.junit.jupiter.api.Test;
+import org.springframework.util.unit.DataSize;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 
@@ -23,7 +25,8 @@ class S3SafetyTest {
                 new S3Service(
                         client,
                         new AwsCallGate(1, 1),
-                        (action, resource) -> fail("Authorization should not be reached"));
+                        (action, resource) -> fail("Authorization should not be reached"),
+                        new S3Properties(DataSize.ofKilobytes(64), DataSize.ofMegabytes(8)));
         assertThrows(
                 IllegalArgumentException.class,
                 () ->

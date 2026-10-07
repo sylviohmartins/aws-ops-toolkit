@@ -47,7 +47,7 @@ Não foi criada CollectionOperations genérica: List.copyOf, Map.copyOf, streams
 
 Para small collections, usar JDK diretamente. Para centenas de milhares/milhões, usar paginação/iterator/chunks e processamento incremental; nunca coletar dataset global nem criar futures ilimitados.
 
-Batching.forEachBatch mantém apenas um buffer do tamanho do batch. BatchProcessor admite no máximo maxConcurrency batches simultâneos; usa virtual threads, mas a admissão ocorre antes de continuar consumindo a origem.
+Batching.forEachBatch mantém apenas um buffer do tamanho do batch. BatchProcessor admite no máximo maxConcurrency batches simultâneos; usa virtual threads, mas a admissão ocorre antes de continuar consumindo a origem. O teste `processesOneMillionGeneratedItemsWithoutMaterializingTheDataset` percorre 1.000.000 de itens gerados sob demanda com batch máximo observado de 1.000, sem construir uma lista global.
 
 BatchOptions.MAX_SUPPORTED_CONCURRENCY é limite estrutural da abstração, não recomendação AWS. Limites específicos de SQS/Dynamo permanecem nos adapters correspondentes.
 
@@ -74,7 +74,7 @@ Adicionar coluna altera somente projection/schema.
 
 Prefixo raiz: toolkit. Padrão: toolkit.<capability>.<attribute>, lowercase/kebab-case.
 
-Capabilities atuais: toolkit.core, toolkit.aws, toolkit.dynamodb, toolkit.http, toolkit.operations, toolkit.report e toolkit.sqs.
+Capabilities atuais: toolkit.core, toolkit.aws, toolkit.dynamodb, toolkit.http, toolkit.journal, toolkit.operations, toolkit.report, toolkit.s3 e toolkit.sqs.
 
 Todos usam @ConfigurationProperties imutáveis/records e ignoreUnknownFields=false. Collections são defensivamente copiadas quando expostas como contrato.
 
@@ -108,12 +108,15 @@ Defaults de escrita continuam fail-closed: toolkit.core.write-enabled=false, too
 | workers/RPS/page size | não | **sim** | não | não | tuning |
 | AIMD healthy streak / circuit threshold / open duration / read attempts / retry backoff | não | **sim** | não | não | tuning/resiliência |
 | HTTP response body limit | não | **sim** | não | não | memória/contrato downstream |
+| SQLite busy/API/report windows | não | **sim** | não | não | contenção/memória local |
+| S3 stream buffer/multipart part | não | **sim** | não | não | memória/requests/throughput |
+| SQS receive/lease/reacquire/poison tuning | não | **sim** | não | não | latência/consistência/retries |
 | dry-run sample size | não | **sim** | não | não | diagnóstico/volume |
 | shutdown timeout | não | **sim** | não | não | tuning |
 | XLSX max data rows | **sim** | validado | não | não | limite do formato |
 | formula prefixes | **sim** | não | não | não | regra estrutural |
 | environment | não | config | **sim** | não | conjunto fechado |
-| job state/mode | não | não | **sim** | não | conjunto fechado |
+| job/effect state/mode | não | não | **sim** | não | conjuntos fechados; `EffectState` elimina strings estruturais do ledger |
 | physical table name | não | **sim** | não | não | varia por ambiente |
 | stable mask prefix | **sim local** | não | não | não | política técnica |
 
@@ -220,6 +223,7 @@ Proibidos/desaconselhados: Utils/CommonUtils/GlobalConstants; wrappers triviais 
 | MapStruct | sim hoje | **não adicionar** |
 | CollectionOperations | sim | **não criar** |
 | FileNameGenerator | sim | **não criar** |
-| properties S3/SNS vazias | sim | **não criar** até existir estado próprio |
+| S3Properties | não; buffer e multipart são tuning real | **manter** |
+| properties SNS vazias | sim hoje | **não criar** até existir estado próprio |
 
 Conclusão: a menor arquitetura útil mantém abstrações onde há IO, bounded processing, segurança, configuração ou ponto real de extensão. Novas regras crescem na borda e reutilizam o núcleo.

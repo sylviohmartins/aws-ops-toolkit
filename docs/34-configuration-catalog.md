@@ -58,6 +58,14 @@ toolkit:
 | toolkit.http.max-response-body | DataSize | 64KB | (0,10MB] | body máximo aceito | limita materialização de resposta em memória |
 | toolkit.http.max-retry-after | Duration | 10s | >=0 | Retry-After máximo | acima disso pausa em vez de dormir indefinidamente |
 
+## toolkit.journal
+
+| Property | Type | Default | Required/range | Description | Operational impact |
+| --- | --- | --- | --- | --- | --- |
+| toolkit.journal.api-page-size | int | 100 | 1..10000 | linhas por página das APIs de plano/erro | memória e payload local |
+| toolkit.journal.busy-timeout | Duration | 5s | 0..1m | espera por lock SQLite | fail-fast vs contenção local |
+| toolkit.journal.report-window-size | int | 500 | 1..10000 | janela de leitura para report/audit streaming | memória vs round-trips SQLite |
+
 ## toolkit.operations
 
 | Property | Type | Default | Required/range | Description | Operational impact |
@@ -94,10 +102,22 @@ toolkit:
 | toolkit.report.xlsx-estimated-bytes-per-row | long | 1024 | >=128 | estimativa de disco | preflight conservador |
 | toolkit.report.protect-spreadsheet-formulas | boolean | true | — | neutraliza células formula-like | segurança ao abrir CSV/XLSX |
 
+## toolkit.s3
+
+| Property | Type | Default | Required/range | Description | Operational impact |
+| --- | --- | --- | --- | --- | --- |
+| toolkit.s3.multipart-part-size | DataSize | 8MB | 5MB..5GB | tamanho mínimo por part de multipart copy | requests, latência e quantidade de parts |
+| toolkit.s3.stream-buffer-size | DataSize | 64KB | 4KB..8MB | buffer local de download streaming | memória vs syscalls/throughput |
+
 ## toolkit.sqs
 
 | Property | Type | Default | Required/range | Description | Operational impact |
 | --- | --- | --- | --- | --- | --- |
+| toolkit.sqs.acknowledgement-lease-reserve | Duration | 5s | 0..visibility-timeout | lease mínima antes do ack | evita delete com receipt prestes a expirar |
+| toolkit.sqs.poison-receive-count | int | 5 | 1..1000 | threshold default de ApproximateReceiveCount; request pode sobrescrever | evita ack/replay de mensagem provavelmente poison |
+| toolkit.sqs.receipt-reacquire-attempts | int | 3 | 1..20 | tentativas bounded de obter receipt novo | chamadas SQS vs chance de recuperação |
+| toolkit.sqs.receipt-reuse-lease-reserve | Duration | 40s | 0..visibility-timeout | lease mínima para reutilizar receipt persistido | reduz risco de stale receipt |
+| toolkit.sqs.receive-wait-time | Duration | 1s | 0..20s | long poll de ReceiveMessage | latência vs requests vazias |
 | toolkit.sqs.visibility-timeout | Duration | 120s | (0,12h] | lease ReceiveMessage | afeta concorrentes/reprocessamento |
 
 ## Nomenclatura e fonte de verdade

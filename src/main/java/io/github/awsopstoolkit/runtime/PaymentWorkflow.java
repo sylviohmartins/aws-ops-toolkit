@@ -81,10 +81,30 @@ public final class PaymentWorkflow extends DynamoWorkflow {
         String queue = required(p, "queue");
         String topic = required(p, "topic");
         String function = required(p, "function");
+        var target = ServiceWorkflow.lambdaTarget(function);
         String bucket = required(p, "evidenceBucket");
         c.read(queue, () -> sqs.getQueueAttributes(b -> b.queueUrl(queue)));
         c.read(topic, () -> sns.getTopicAttributes(b -> b.topicArn(topic)));
-        c.read(function, () -> lambda.getFunctionConfiguration(b -> b.functionName(function)));
+        c.read(
+                function,
+                () -> lambda.getFunctionConfiguration(b -> b.functionName(target.functionName())));
+        if (target.qualifier().matches("\\d+")) {
+            c.read(
+                    function,
+                    () ->
+                            lambda.getFunctionConfiguration(
+                                    b ->
+                                            b.functionName(target.functionName())
+                                                    .qualifier(target.qualifier())));
+        } else {
+            c.read(
+                    function,
+                    () ->
+                            lambda.getAlias(
+                                    b ->
+                                            b.functionName(target.functionName())
+                                                    .name(target.qualifier())));
+        }
         c.read(bucket, () -> s3.headBucket(b -> b.bucket(bucket)));
     }
 
@@ -140,7 +160,7 @@ public final class PaymentWorkflow extends DynamoWorkflow {
         Map<String, AttributeValue> key = Map.of("id", s(task.key()));
         // Once a write may have happened, complete/reconcile its delivery chain from the ledger.
         var priorUpdate = c.effectState(task, "dynamodb-update");
-        if (priorUpdate == null || priorUpdate.state().equals("NOT_SENT")) {
+        if (priorUpdate == null || priorUpdate.state() == EffectState.NOT_SENT) {
             var remote = http.get(c, task.key());
             if (!"SETTLED".equals(remote.path("status").asText())) return "SKIPPED";
         }
@@ -207,6 +227,7 @@ public final class PaymentWorkflow extends DynamoWorkflow {
         String queue = p.path("queue").asText();
         String topic = p.path("topic").asText();
         String function = p.path("function").asText();
+        var functionTarget = ServiceWorkflow.lambdaTarget(function);
         c.effect(
                 task,
                 "sqs-delivery",
@@ -228,7 +249,8 @@ public final class PaymentWorkflow extends DynamoWorkflow {
                             var response =
                                     lambda.invoke(
                                             InvokeRequest.builder()
-                                                    .functionName(function)
+                                                    .functionName(functionTarget.functionName())
+                                                    .qualifier(functionTarget.qualifier())
                                                     .invocationType(InvocationType.REQUEST_RESPONSE)
                                                     .payload(SdkBytes.fromUtf8String(event))
                                                     .build());

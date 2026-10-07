@@ -190,7 +190,9 @@ public final class JobCoordinator {
         long done = journal.count(id, "DONE");
         long errors = journal.errors(id);
         var effects = journal.effectCounts(id);
-        long unresolved = effects.getOrDefault("UNKNOWN", 0L) + effects.getOrDefault("INTENT", 0L);
+        long unresolved =
+                effects.getOrDefault(EffectState.UNKNOWN, 0L)
+                        + effects.getOrDefault(EffectState.INTENT, 0L);
         double errorRate = done == 0 ? 0.0 : errors / (double) done;
         double throughput = job.elapsedMillis() <= 0 ? 0.0 : done * 1000.0 / job.elapsedMillis();
         var result = new LinkedHashMap<String, Object>();
@@ -361,14 +363,14 @@ public final class JobCoordinator {
                 || evidence.length() > MAX_RECONCILIATION_EVIDENCE_CHARS)
             throw new IllegalStateException("Reconciliation requires a stopped job and evidence");
         var effect = journal.effect(id, task, step);
-        if (effect == null || !Set.of("UNKNOWN", "INTENT").contains(effect.state()))
+        if (effect == null || !effect.state().unresolved())
             throw new IllegalArgumentException("No unknown effect");
         if (succeeded) validateRecoveredResult(step, recoveredResult);
         journal.effect(
                 id,
                 task,
                 step,
-                succeeded ? "SUCCEEDED" : "NOT_SENT",
+                succeeded ? EffectState.SUCCEEDED : EffectState.NOT_SENT,
                 succeeded ? recoveredResult : "");
         journal.audit(id, "OPERATOR_RECONCILIATION", task + ":" + step + ":" + evidence);
     }
