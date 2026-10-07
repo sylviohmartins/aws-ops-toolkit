@@ -256,6 +256,23 @@ class PaymentGatewayTest {
     }
 
     @Test
+    void forbiddenResponseRequiresAuthorizationWithoutRetry() throws Exception {
+        respond(exchange -> send(exchange, 403, "{}"));
+        server.start();
+
+        try (var fixture = fixture()) {
+            var stopped =
+                    assertThrows(
+                            JobStopped.class,
+                            () -> fixture.gateway().get(fixture.context(), "p403"));
+
+            assertEquals(JobState.AUTHORIZATION_REQUIRED, stopped.state());
+            assertEquals(1, requests.get());
+            assertEquals(2, fixture.journal().job("job").calls());
+        }
+    }
+
+    @Test
     void malformedJsonIsRejectedWithoutRetry() throws Exception {
         respond(exchange -> send(exchange, 200, "{\"reference\":\"p5\""));
         server.start();
@@ -270,19 +287,20 @@ class PaymentGatewayTest {
     }
 
     @Test
-    void oversizedBodyIsAbortedAndUsesOnlyTheAttemptBudget() throws Exception {
+    void oversizedBodyIsRejectedWithoutRetry() throws Exception {
         byte[] oversized = new byte[65_537];
         respond(exchange -> send(exchange, 200, oversized));
         server.start();
 
         try (var fixture = fixture()) {
-            var stopped =
+            var failure =
                     assertThrows(
-                            JobStopped.class, () -> fixture.gateway().get(fixture.context(), "p6"));
+                            IllegalArgumentException.class,
+                            () -> fixture.gateway().get(fixture.context(), "p6"));
 
-            assertEquals(JobState.PAUSED, stopped.state());
-            assertEquals(3, requests.get());
-            assertEquals(6, fixture.journal().job("job").calls());
+            assertEquals("Payment response body exceeds configured limit", failure.getMessage());
+            assertEquals(1, requests.get());
+            assertEquals(2, fixture.journal().job("job").calls());
         }
     }
 

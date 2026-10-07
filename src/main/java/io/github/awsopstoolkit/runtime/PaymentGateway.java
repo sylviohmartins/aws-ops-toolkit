@@ -142,9 +142,16 @@ public final class PaymentGateway implements AutoCloseable {
             future.cancel(true);
             Thread.currentThread().interrupt();
             throw new JobStopped(JobState.INTERRUPTED);
-        } catch (TimeoutException | ExecutionException e) {
+        } catch (TimeoutException e) {
             future.cancel(true);
-            throw new UncheckedIOException(new IOException("Payment transport failed"));
+            throw new UncheckedIOException(new IOException("Payment transport failed", e));
+        } catch (ExecutionException e) {
+            future.cancel(true);
+            if (e.getCause() instanceof ResponseBodyLimitException)
+                throw new IllegalArgumentException(
+                        "Payment response body exceeds configured limit");
+            throw new UncheckedIOException(
+                    new IOException("Payment transport failed", e.getCause()));
         }
     }
 
@@ -170,6 +177,12 @@ public final class PaymentGateway implements AutoCloseable {
     @Override
     public void close() {
         client.close();
+    }
+
+    private static final class ResponseBodyLimitException extends IOException {
+        private ResponseBodyLimitException() {
+            super("Response body limit");
+        }
     }
 
     private static final class LimitedBody implements HttpResponse.BodySubscriber<byte[]> {
@@ -198,7 +211,7 @@ public final class PaymentGateway implements AutoCloseable {
             for (var buffer : buffers) {
                 if ((long) bytes.size() + buffer.remaining() > maxBytes) {
                     subscription.cancel();
-                    result.completeExceptionally(new IOException("Response body limit"));
+                    result.completeExceptionally(new ResponseBodyLimitException());
                     return;
                 }
                 byte[] chunk = new byte[buffer.remaining()];
