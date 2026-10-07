@@ -6,6 +6,7 @@ import io.github.awsopstoolkit.checkpoint.FileCheckpointStore;
 import io.github.awsopstoolkit.configuration.ReportProperties;
 import io.github.awsopstoolkit.configuration.ToolkitProperties;
 import io.github.awsopstoolkit.report.CsvReportWriterFactory;
+import io.github.awsopstoolkit.security.Hashing;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import jakarta.validation.Validation;
 import java.io.ByteArrayOutputStream;
@@ -273,6 +274,134 @@ class OperationSafetyTest {
                         OperationStatus.FAILED,
                         awaitTerminal(executor, job.operationId()).status());
                 assertEquals(0, store.load(job.operationId()).cursor());
+            } finally {
+                executor.shutdown();
+                meters.close();
+            }
+        }
+    }
+
+    @Test
+    void idempotencyKeyReusesOperationAndRejectsDifferentRequest() throws Exception {
+        var properties = properties(ToolkitProperties.Environment.LOCAL, false);
+        try (var store = new FileCheckpointStore(properties, mapper);
+                var validation = Validation.buildDefaultValidatorFactory()) {
+            var meters = new SimpleMeterRegistry();
+            var executor =
+                    new OperationExecutor(
+                            new OperationRegistry(List.of(syntheticOperation())),
+                            store,
+                            new PreflightCheckService(properties, store),
+                            properties,
+                            mapper,
+                            validation.getValidator(),
+                            meters);
+            try {
+                var firstRequest =
+                        new OperationRequest(
+                                OperationMode.DRY_RUN,
+                                mapper.readTree("{\"records\":25,\"delayMillis\":0}"));
+                var reorderedRequest =
+                        new OperationRequest(
+                                OperationMode.DRY_RUN,
+                                mapper.readTree("{\"delayMillis\":0,\"records\":25}"));
+
+                var first = executor.start("synthetic-inventory", firstRequest, "incident-123");
+                var replay =
+                        executor.start("synthetic-inventory", reorderedRequest, "incident-123");
+
+                assertEquals(first.operationId(), replay.operationId());
+                assertEquals(
+                        OperationStatus.COMPLETED,
+                        awaitTerminal(executor, first.operationId()).status());
+
+                var differentRequest =
+                        new OperationRequest(
+                                OperationMode.DRY_RUN,
+                                mapper.valueToTree(new SyntheticInventoryOperation.Input(26, 0)));
+                assertThrows(
+                        IllegalStateException.class,
+                        () ->
+                                executor.start(
+                                        "synthetic-inventory", differentRequest, "incident-123"));
+            } finally {
+                executor.shutdown();
+                meters.close();
+            }
+        }
+    }
+
+    @Test
+    void idempotencyKeyValidationFailsClosed() throws Exception {
+        var properties = properties(ToolkitProperties.Environment.LOCAL, false);
+        try (var store = new FileCheckpointStore(properties, mapper);
+                var validation = Validation.buildDefaultValidatorFactory()) {
+            var meters = new SimpleMeterRegistry();
+            var executor =
+                    new OperationExecutor(
+                            new OperationRegistry(List.of(syntheticOperation())),
+                            store,
+                            new PreflightCheckService(properties, store),
+                            properties,
+                            mapper,
+                            validation.getValidator(),
+                            meters);
+            var request =
+                    new OperationRequest(
+                            OperationMode.DRY_RUN,
+                            mapper.valueToTree(new SyntheticInventoryOperation.Input(1, 0)));
+            try {
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> executor.start("synthetic-inventory", request, ""));
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> executor.start("synthetic-inventory", request, " leading"));
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> executor.start("synthetic-inventory", request, "x".repeat(129)));
+                assertThrows(
+                        IllegalArgumentException.class,
+                        () -> executor.start("synthetic-inventory", request, "line\nbreak"));
+            } finally {
+                executor.shutdown();
+                meters.close();
+            }
+        }
+    }
+
+    @Test
+    void reservedIdempotencyKeySurvivesMissingCheckpoint() throws Exception {
+        var properties = properties(ToolkitProperties.Environment.LOCAL, false);
+        var input = new SyntheticInventoryOperation.Input(25, 0);
+        var request = new OperationRequest(OperationMode.DRY_RUN, mapper.valueToTree(input));
+        var reservedId = UUID.randomUUID();
+        String fingerprint =
+                Hashing.sha256Hex(
+                        "synthetic-inventory\n1\nDRY_RUN\n" + mapper.writeValueAsString(input));
+
+        try (var store = new FileCheckpointStore(properties, mapper)) {
+            store.reserveIdempotency("crash-window", fingerprint, reservedId);
+            assertFalse(store.checkpointExists(reservedId));
+        }
+
+        try (var store = new FileCheckpointStore(properties, mapper);
+                var validation = Validation.buildDefaultValidatorFactory()) {
+            var meters = new SimpleMeterRegistry();
+            var executor =
+                    new OperationExecutor(
+                            new OperationRegistry(List.of(syntheticOperation())),
+                            store,
+                            new PreflightCheckService(properties, store),
+                            properties,
+                            mapper,
+                            validation.getValidator(),
+                            meters);
+            try {
+                var replay = executor.start("synthetic-inventory", request, "crash-window");
+                assertEquals(reservedId, replay.operationId());
+                assertEquals(
+                        OperationStatus.COMPLETED, awaitTerminal(executor, reservedId).status());
             } finally {
                 executor.shutdown();
                 meters.close();

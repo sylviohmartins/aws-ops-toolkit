@@ -2,6 +2,7 @@ package io.github.awsopstoolkit.operation;
 
 import io.github.awsopstoolkit.checkpoint.FileCheckpointStore;
 import io.github.awsopstoolkit.configuration.ToolkitProperties;
+import io.github.awsopstoolkit.security.Hashing;
 import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.annotation.PreDestroy;
 import jakarta.validation.Validator;
@@ -61,15 +62,40 @@ public final class OperationExecutor {
 
     public synchronized OperationSnapshot start(String type, OperationRequest request)
             throws IOException {
+        return start(type, request, null);
+    }
+
+    public synchronized OperationSnapshot start(
+            String type, OperationRequest request, String idempotencyKey) throws IOException {
         var definition = registry.require(type);
-        long total = validateAndTotal(definition, request.parameters());
+        Object input = validateInput(definition, request.parameters());
+        long total = total(definition, input);
+        String fingerprint =
+                idempotencyKey == null
+                        ? null
+                        : requestFingerprint(type, definition.version(), request.mode(), input);
+
+        UUID operationId = UUID.randomUUID();
+        if (idempotencyKey != null) {
+            var existing = store.findIdempotency(idempotencyKey, fingerprint);
+            if (existing != null) {
+                operationId = existing.operationId();
+                if (store.checkpointExists(operationId)) return status(operationId);
+            }
+        }
+
         preflight.check(request.mode(), total, reservedBytes());
         requireCapacity();
+
+        if (idempotencyKey != null) {
+            var reservation = store.reserveIdempotency(idempotencyKey, fingerprint, operationId);
+            operationId = reservation.operationId();
+        }
         var now = Instant.now();
         var snapshot =
                 new OperationSnapshot(
                         1,
-                        UUID.randomUUID(),
+                        operationId,
                         type,
                         definition.version(),
                         request.mode(),
@@ -155,10 +181,32 @@ public final class OperationExecutor {
     }
 
     private <I> long validateAndTotal(OperationDefinition<I> definition, JsonNode parameters) {
+        return definition.total(validateInput(definition, parameters));
+    }
+
+    private <I> I validateInput(OperationDefinition<I> definition, JsonNode parameters) {
         I input = mapper.treeToValue(parameters, definition.inputType());
         if (input == null || !validator.validate(input).isEmpty())
             throw new IllegalArgumentException("Invalid operation parameters");
-        return definition.total(input);
+        return input;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <I> long total(OperationDefinition<I> definition, Object input) {
+        return definition.total((I) input);
+    }
+
+    private String requestFingerprint(
+            String type, String version, OperationMode mode, Object normalizedInput) {
+        String canonical =
+                type
+                        + "\n"
+                        + version
+                        + "\n"
+                        + mode.name()
+                        + "\n"
+                        + mapper.writeValueAsString(normalizedInput);
+        return Hashing.sha256Hex(canonical);
     }
 
     private void schedule(OperationSnapshot snapshot) throws IOException {

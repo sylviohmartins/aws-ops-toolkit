@@ -15,7 +15,7 @@ A demonstração deve falhar claramente se a garantia necessária não estiver d
 
 ## Invariantes
 
-1. Nenhum efeito é emitido antes de a intenção e a chave de idempotência estarem duráveis.
+1. Nenhum efeito é emitido antes de a intenção e a chave de idempotência estarem duráveis. Separadamente, a API foundation persiste a reserva de `Idempotency-Key` de admissão antes do primeiro checkpoint da operação: retry com o mesmo request reutiliza o mesmo UUID, enquanto payload divergente falha em conflito. Essa deduplicação do POST não substitui a idempotência de cada efeito remoto.
 2. Nenhum item é contado como confirmado antes de confirmação confiável ou reconciliação positiva.
 3. Cursor de conclusão só avança quando todos os itens daquela página estão contabilizados duravelmente.
 4. `UNKNOWN` não é sucesso nem falha comprovada; impede conclusão e repetição cega.
