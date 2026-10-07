@@ -1,6 +1,6 @@
 # Relatórios, auditoria e segurança de disco
 
-Pesquisa: 18/09/2026. **DECISÃO:** CSV streaming é formato primário de detalhes; JSON resume a operação; XLSX é visão resumida opcional, gerada depois do processamento. No skeleton há saída CSV LOCAL. O ledger transacional, XLSX, upload e audit trail de produção descritos abaixo são blueprint a implementar.
+Pesquisa: 18/09/2026; status revisado em 07/10/2026. **DECISÃO:** CSV streaming é formato primário de detalhes; JSON resume a operação; XLSX é visão resumida opcional, gerada depois do processamento. O runtime local já implementa CSV, XLSX via SXSSF e ledger/auditoria SQLite. Isso não equivale a um audit trail produtivo homologado: retenção, PII, ACLs, criptografia e destino/upload corporativo de evidências permanecem dependentes do ambiente.
 
 **Implementação inicial concreta:** `FileCheckpointStore` guarda `checkpoint.json` e `chunk-<cursor>.csv` em `<toolkit.core.data-directory>/<operationId>/`. O download escreve header e concatena apenas chunks confirmados pelo cursor; cada página é mantida temporariamente em memória, sem acumular a massa completa. Um chunk órfão pode ser substituído por replay determinístico. A árvore `reports/` e os manifestos abaixo são alvo CORE, não nomes de arquivos já produzidos pela demonstração. Reserva inicial de disco no YAML é 1 GiB; a proposta produtiva de 2 GiB adiante exige calibração e não descreve esse default.
 
@@ -69,7 +69,7 @@ Relatório não é banco de controle. O alvo produtivo usa ledger SQLite local c
 
 **DECISÃO:** relatório é projeção regenerável do ledger. Resultados de etapas e eventos de relatório são gravados em transações locais; o cursor só avança após todos os desfechos exigidos da página estarem duráveis, conforme [checkpoint](23-checkpoint-resume-idempotency.md). Renderização é posterior ao commit. Se falhar, retomar a projeção do último evento exportado; não repetir escrita AWS para recriar CSV. Confirmar metadados de parte no ledger após fechar/sincronizar a parte; arquivo órfão é detectado e refeito. Limitar bytes/idade do backlog em disco e fechar admissão se o atraso ameaçar a reserva operacional.
 
-SQLite WAL em disco local com `synchronous=FULL`, transações curtas e único writer é o alvo. Reservar espaço para WAL/checkpoint e evitar leitores de longa duração; não colocar WAL em share de rede. `FULL` melhora garantias frente a perda de energia, mas não protege contra falha física, filesystem defeituoso ou disco perdido. JSON com rename atômico do skeleton demonstra checkpoint, não implementa esse ledger. [SQLite: WAL e sincronização](https://www.sqlite.org/wal.html).
+SQLite WAL em disco local com `synchronous=FULL`, transações curtas e writer local controlado é a estratégia implementada no runtime por `SqliteJournal`. Reservar espaço para WAL/checkpoint e evitar leitores de longa duração; não colocar WAL em share de rede. `FULL` melhora garantias frente a perda de energia, mas não protege contra falha física, filesystem defeituoso ou disco perdido. O store JSON da API foundation continua existindo para seu fluxo próprio de checkpoint/admissão e não substitui o ledger SQLite dos jobs operacionais. [SQLite: WAL e sincronização](https://www.sqlite.org/wal.html).
 
 ## Pre-image, post-image e rollback
 

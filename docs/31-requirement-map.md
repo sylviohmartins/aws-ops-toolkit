@@ -1,6 +1,6 @@
 # Rastreabilidade do prompt
 
-Nome definitivo: **aws-ops-toolkit**. A numeração abaixo corresponde às seções do prompt recebido. A ordem de leitura das 32 partes do entregável está no [README](../README.md). “Blueprint” significa desenho ainda não implementado; “runtime” significa código presente em `io.github.awsopstoolkit.runtime`, descrito no [status operacional atualizado em 2026-09-22](32-operational-runtime.md). Presença no runtime não equivale a homologação produtiva.
+Nome definitivo: **aws-ops-toolkit**. A numeração abaixo corresponde às seções do prompt recebido. A ordem de leitura das 32 partes do entregável está no [README](../README.md). “Blueprint” significa desenho ainda não implementado; “runtime” significa código presente em `io.github.awsopstoolkit.runtime`, descrito no [status operacional](32-operational-runtime.md), com validação consolidada em 2026-10-07. Presença no runtime não equivale a homologação produtiva.
 
 | Seções do prompt | Evidência principal | Nível desta entrega |
 | --- | --- | --- |
