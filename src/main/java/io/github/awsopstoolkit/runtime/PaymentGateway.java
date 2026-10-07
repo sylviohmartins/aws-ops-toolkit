@@ -72,7 +72,7 @@ public final class PaymentGateway implements AutoCloseable {
                 if (attempt == maxAttempts - 1) throw new JobStopped(JobState.PAUSED);
                 context.externalRetry();
                 io.micrometer.core.instrument.Metrics.counter("toolkit.http.retries").increment();
-                context.backoff(attempt);
+                waitForBackoff(context, attempt);
                 continue;
             }
             int status = response.statusCode();
@@ -89,8 +89,8 @@ public final class PaymentGateway implements AutoCloseable {
                     throw new JobStopped(JobState.PAUSED);
                 context.externalRetry();
                 io.micrometer.core.instrument.Metrics.counter("toolkit.http.retries").increment();
-                if (seconds > 0) Thread.sleep(Duration.ofSeconds(seconds));
-                else context.backoff(attempt);
+                if (seconds > 0) waitForRetryAfter(Duration.ofSeconds(seconds));
+                else waitForBackoff(context, attempt);
                 continue;
             }
             if (status != 200) throw new IllegalArgumentException("Payment response rejected");
@@ -103,6 +103,27 @@ public final class PaymentGateway implements AutoCloseable {
             return result;
         }
         throw new IllegalStateException("Attempt budget exhausted");
+    }
+
+    private static void waitForBackoff(JobContext context, int attempt) {
+        try {
+            context.backoff(attempt);
+        } catch (InterruptedException interrupted) {
+            throw interrupted();
+        }
+    }
+
+    private static void waitForRetryAfter(Duration delay) {
+        try {
+            Thread.sleep(delay);
+        } catch (InterruptedException interrupted) {
+            throw interrupted();
+        }
+    }
+
+    private static JobStopped interrupted() {
+        Thread.currentThread().interrupt();
+        return new JobStopped(JobState.INTERRUPTED);
     }
 
     private HttpResponse<byte[]> fetch(String reference, String job) {
