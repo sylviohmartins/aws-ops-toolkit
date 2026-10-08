@@ -83,6 +83,14 @@
                 </configuration>
             </plugin>
             <plugin>
+                <groupId>org.apache.maven.plugins</groupId><artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <systemPropertyVariables>
+                        <jdk.httpclient.redirects.retrylimit>1</jdk.httpclient.redirects.retrylimit>
+                    </systemPropertyVariables>
+                </configuration>
+            </plugin>
+            <plugin>
                 <groupId>org.apache.maven.plugins</groupId><artifactId>maven-enforcer-plugin</artifactId>
                 <executions><execution><id>toolchain</id><goals><goal>enforce</goal></goals><configuration><rules>
                     <requireJavaVersion><version>[25,26)</version></requireJavaVersion>
