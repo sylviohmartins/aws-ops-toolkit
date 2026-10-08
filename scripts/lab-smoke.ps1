@@ -18,7 +18,7 @@ $script:process = $null
 $script:launch = 0
 function Start-LabToolkit {
     $script:launch++
-    $arguments = @('--enable-native-access=ALL-UNNAMED', '-jar', ('"' + $jar + '"'), '--spring.profiles.active=lab', "--server.port=$Port",
+    $arguments = @('--enable-native-access=ALL-UNNAMED', '-Djdk.httpclient.redirects.retrylimit=1', '-jar', ('"' + $jar + '"'), '--spring.profiles.active=lab', "--server.port=$Port",
         ('"--toolkit.core.data-directory=' + (Join-Path $runDirectory 'data') + '"'),
         '--toolkit.core.minimum-free-space=1MB', '--toolkit.operations.requests-per-second=20', '--toolkit.operations.page-size=5')
     $script:process = Start-Process -FilePath $java -ArgumentList $arguments -PassThru -WindowStyle Hidden -WorkingDirectory $runDirectory `

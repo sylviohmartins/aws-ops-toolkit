@@ -20,7 +20,7 @@ $script:launchNumber = 0
 
 function Start-Toolkit {
     $script:launchNumber++
-    $arguments = @('-jar', ('"' + $jar + '"'), "--server.port=$Port",
+    $arguments = @('-Djdk.httpclient.redirects.retrylimit=1', '-jar', ('"' + $jar + '"'), "--server.port=$Port",
         ('"--toolkit.core.data-directory=' + (Join-Path $runDirectory 'data') + '"'),
         '--toolkit.core.minimum-free-space=1MB', '--toolkit.core.max-concurrent-operations=1')
     $script:process = Start-Process -FilePath $java -ArgumentList $arguments -PassThru -WindowStyle Hidden -WorkingDirectory $runDirectory `

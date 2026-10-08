@@ -41,13 +41,21 @@ public final class PaymentGateway implements AutoCloseable {
         this.maxAttempts = http.maxAttempts();
         this.maxRetryAfter = http.maxRetryAfter();
         this.maxResponseBodyBytes = http.maxResponseBody().toBytes();
+        base = http.paymentEndpoint();
+        if (base == null) {
+            this.client =
+                    HttpClient.newBuilder()
+                            .connectTimeout(connectTimeout)
+                            .followRedirects(HttpClient.Redirect.NEVER)
+                            .build();
+            return;
+        }
+        requireSingleJdkSendAttempt();
         this.client =
                 HttpClient.newBuilder()
                         .connectTimeout(connectTimeout)
                         .followRedirects(HttpClient.Redirect.NEVER)
                         .build();
-        base = http.paymentEndpoint();
-        if (base == null) return;
         boolean local =
                 runtime.labEndpoint() != null
                         && java.util.Set.of("127.0.0.1", "localhost").contains(base.getHost());
@@ -57,6 +65,16 @@ public final class PaymentGateway implements AutoCloseable {
                 || base.getQuery() != null
                 || base.getFragment() != null)
             throw new IllegalArgumentException("Invalid payment origin");
+    }
+
+    private static void requireSingleJdkSendAttempt() {
+        validateJdkRetryLimit(System.getProperty("jdk.httpclient.redirects.retrylimit"));
+    }
+
+    static void validateJdkRetryLimit(String configured) {
+        if (!"1".equals(configured))
+            throw new IllegalStateException(
+                    "HTTP integration requires -Djdk.httpclient.redirects.retrylimit=1");
     }
 
     public JsonNode get(JobContext context, String reference) throws Exception {

@@ -52,6 +52,13 @@ class PaymentGatewayTest {
     }
 
     @Test
+    void paymentIntegrationRequiresSingleJdkSendAttempt() {
+        assertThrows(IllegalStateException.class, () -> PaymentGateway.validateJdkRetryLimit(null));
+        assertThrows(IllegalStateException.class, () -> PaymentGateway.validateJdkRetryLimit("5"));
+        PaymentGateway.validateJdkRetryLimit("1");
+    }
+
+    @Test
     void repeated429StopsAfterThreeRequests() throws Exception {
         respond(exchange -> send(exchange, 429, "{}", "Retry-After", "not-a-valid-retry-value"));
         server.start();
@@ -201,6 +208,23 @@ class PaymentGatewayTest {
             assertEquals(4, payment.path("version").asLong());
             assertEquals(3, requests.get());
             assertEquals(6, fixture.journal().job("job").calls());
+        }
+    }
+
+    @Test
+    void repeatedConnectionResetPausesWithinAttemptBudget() throws Exception {
+        respond(HttpExchange::close);
+        server.start();
+
+        try (var fixture = fixture()) {
+            var stopped =
+                    assertThrows(
+                            JobStopped.class,
+                            () -> fixture.gateway().get(fixture.context(), "reset"));
+
+            assertEquals(JobState.PAUSED, stopped.state());
+            assertEquals(2, fixture.journal().job("job").retries());
+            assertEquals(3, requests.get());
         }
     }
 
