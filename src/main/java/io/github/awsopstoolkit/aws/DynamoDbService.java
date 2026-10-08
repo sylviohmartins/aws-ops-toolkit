@@ -319,16 +319,7 @@ public final class DynamoDbService {
 
     public TransactWriteItemsResponse transactWrite(TransactWriteItemsRequest request)
             throws InterruptedException {
-        if (request.transactItems().isEmpty()
-                || request.transactItems().size() > DynamoLimits.MAX_TRANSACTION_ACTIONS
-                || request.clientRequestToken() == null
-                || request.clientRequestToken().isBlank()) {
-            throw new IllegalArgumentException(
-                    "Transaction requires 1 to "
-                            + DynamoLimits.MAX_TRANSACTION_ACTIONS
-                            + " actions and a stable client request token");
-        }
-        request.transactItems().forEach(DynamoDbService::requireConditionalTransactionItem);
+        validateConditionalTransaction(request);
         return gate.call(
                 () -> {
                     request.transactItems()
@@ -353,6 +344,22 @@ public final class DynamoDbService {
                                     });
                     return client.transactWriteItems(request);
                 });
+    }
+
+    public static void validateConditionalTransaction(TransactWriteItemsRequest request) {
+        Objects.requireNonNull(request, "request");
+        String token = request.clientRequestToken();
+        if (request.transactItems().isEmpty()
+                || request.transactItems().size() > DynamoLimits.MAX_TRANSACTION_ACTIONS
+                || token == null
+                || token.isBlank()
+                || token.length() > 36) {
+            throw new IllegalArgumentException(
+                    "Transaction requires 1 to "
+                            + DynamoLimits.MAX_TRANSACTION_ACTIONS
+                            + " actions and a stable client request token of at most 36 characters");
+        }
+        request.transactItems().forEach(DynamoDbService::requireConditionalTransactionItem);
     }
 
     private static void requireConditionalTransactionItem(TransactWriteItem item) {
