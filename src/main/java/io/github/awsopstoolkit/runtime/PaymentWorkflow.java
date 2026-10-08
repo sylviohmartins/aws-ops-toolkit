@@ -1,6 +1,8 @@
 package io.github.awsopstoolkit.runtime;
 
+import io.github.awsopstoolkit.aws.DynamoDbService;
 import io.github.awsopstoolkit.configuration.HttpProperties;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 import software.amazon.awssdk.core.SdkBytes;
 import software.amazon.awssdk.core.sync.RequestBody;
@@ -51,13 +53,16 @@ public final class PaymentWorkflow extends DynamoWorkflow {
 
     @Override
     public Set<String> resources(JsonNode p) {
-        return Set.of(
-                required(p, "table"),
-                required(p, "queue"),
-                required(p, "topic"),
-                required(p, "function"),
-                required(p, "evidenceBucket"),
-                settings.paymentEndpoint().toString());
+        var resources = new LinkedHashSet<String>();
+        resources.add(required(p, "table"));
+        resources.add(required(p, "queue"));
+        resources.add(required(p, "topic"));
+        resources.add(required(p, "function"));
+        resources.add(required(p, "evidenceBucket"));
+        resources.add(settings.paymentEndpoint().toString());
+        String outboxTable = optionalOutboxTable(p);
+        if (outboxTable != null) resources.add(outboxTable);
+        return Set.copyOf(resources);
     }
 
     @Override
@@ -65,7 +70,8 @@ public final class PaymentWorkflow extends DynamoWorkflow {
         var p = request.parameters();
         resources(p);
         ServiceWorkflow.requireQualifiedFunction(required(p, "function"));
-        Set<String> fields = Set.of("table", "queue", "topic", "function", "evidenceBucket");
+        Set<String> fields =
+                Set.of("table", "queue", "topic", "function", "evidenceBucket", "outboxTable");
         p.propertyNames()
                 .forEach(
                         n -> {
@@ -83,6 +89,10 @@ public final class PaymentWorkflow extends DynamoWorkflow {
         String function = required(p, "function");
         var target = ServiceWorkflow.lambdaTarget(function);
         String bucket = required(p, "evidenceBucket");
+        String outboxTable = optionalOutboxTable(p);
+        if (outboxTable != null) {
+            c.read(outboxTable, () -> dynamo.describeTable(b -> b.tableName(outboxTable)));
+        }
         c.read(queue, () -> sqs.getQueueAttributes(b -> b.queueUrl(queue)));
         c.read(topic, () -> sns.getTopicAttributes(b -> b.topicArn(topic)));
         c.read(
@@ -137,14 +147,15 @@ public final class PaymentWorkflow extends DynamoWorkflow {
 
     @Override
     public int estimatedCallsPerCandidate() {
-        return 6;
+        return 9;
     }
 
     @Override
     public List<String> risks() {
         return List.of(
                 "Concurrent updates may produce conditional conflicts",
-                "Cross-service effects are reconciled but are not transactionally atomic",
+                "Without outboxTable, cross-service effects are reconciled but are not transactionally atomic",
+                "With outboxTable, payment update and event creation are atomic but broker delivery remains at-least-once",
                 "Credential expiry or ambiguous transport failures may require operator reconciliation");
     }
 
@@ -154,65 +165,10 @@ public final class PaymentWorkflow extends DynamoWorkflow {
         var item = c.json.readTree(task.payload());
         if (!"PENDING".equals(item.path("status").asText())) return "SKIPPED";
         String table = p.path("table").asText();
+        String outboxTable = optionalOutboxTable(p);
         long version = item.path("version").asLong(-1);
         if (version < 0) throw new IllegalArgumentException("Missing optimistic version");
         String eventId = c.id() + ":" + task.key();
-        Map<String, AttributeValue> key = Map.of("id", s(task.key()));
-        // Once a write may have happened, complete/reconcile its delivery chain from the ledger.
-        var priorUpdate = c.effectState(task, "dynamodb-update");
-        if (priorUpdate == null || priorUpdate.state() == EffectState.NOT_SENT) {
-            var remote = http.get(c, task.key());
-            if (!"SETTLED".equals(remote.path("status").asText())) return "SKIPPED";
-        }
-        try {
-            c.effect(
-                    task,
-                    "dynamodb-update",
-                    table,
-                    () -> {
-                        dynamo.updateItem(
-                                UpdateItemRequest.builder()
-                                        .tableName(table)
-                                        .key(key)
-                                        .conditionExpression("#v=:v AND #s=:pending")
-                                        .updateExpression(
-                                                "SET #s=:settled,#v=:next,opsMarker=:marker,opsPreviousStatus=:pending")
-                                        .expressionAttributeNames(
-                                                Map.of("#s", "status", "#v", "version"))
-                                        .expressionAttributeValues(
-                                                Map.of(
-                                                        ":v",
-                                                        n(version),
-                                                        ":next",
-                                                        n(version + 1),
-                                                        ":pending",
-                                                        s("PENDING"),
-                                                        ":settled",
-                                                        s("SETTLED"),
-                                                        ":marker",
-                                                        s(eventId)))
-                                        .build());
-                        return "UPDATED";
-                    },
-                    () -> {
-                        var actual =
-                                c.read(
-                                                table,
-                                                () ->
-                                                        dynamo.getItem(
-                                                                GetItemRequest.builder()
-                                                                        .tableName(table)
-                                                                        .key(key)
-                                                                        .consistentRead(true)
-                                                                        .build()))
-                                        .item();
-                        return eventId.equals(actual.getOrDefault("opsMarker", s("")).s())
-                                ? Optional.of("RECONCILED")
-                                : Optional.empty();
-                    });
-        } catch (ConditionalCheckFailedException e) {
-            return "CONFLICT";
-        }
         String event =
                 c.json.writeValueAsString(
                         Map.of(
@@ -224,22 +180,120 @@ public final class PaymentWorkflow extends DynamoWorkflow {
                                 "SETTLED",
                                 "version",
                                 version + 1));
+        Map<String, AttributeValue> key = Map.of("id", s(task.key()));
+        String updateStep = outboxTable == null ? "dynamodb-update" : "dynamodb-update-outbox";
+        var priorUpdate = c.effectState(task, updateStep);
+        if (priorUpdate == null || priorUpdate.state() == EffectState.NOT_SENT) {
+            var remote = http.get(c, task.key());
+            if (!"SETTLED".equals(remote.path("status").asText())) return "SKIPPED";
+        }
+        try {
+            c.effect(
+                    task,
+                    updateStep,
+                    table,
+                    () -> {
+                        if (outboxTable == null) {
+                            dynamo.updateItem(paymentUpdate(table, key, version, eventId));
+                            return "UPDATED";
+                        }
+                        var transaction =
+                                TransactWriteItemsRequest.builder()
+                                        .clientRequestToken(transactionToken(eventId))
+                                        .transactItems(
+                                                TransactWriteItem.builder()
+                                                        .update(
+                                                                paymentTransactionUpdate(
+                                                                        table,
+                                                                        key,
+                                                                        version,
+                                                                        eventId))
+                                                        .build(),
+                                                TransactWriteItem.builder()
+                                                        .put(
+                                                                Put.builder()
+                                                                        .tableName(outboxTable)
+                                                                        .item(
+                                                                                Map.of(
+                                                                                        "eventId",
+                                                                                        s(eventId),
+                                                                                        "operationId",
+                                                                                        s(c.id()),
+                                                                                        "paymentId",
+                                                                                        s(task.key()),
+                                                                                        "payload",
+                                                                                        s(event),
+                                                                                        "deliveryState",
+                                                                                        s("PENDING"),
+                                                                                        "version",
+                                                                                        n(version + 1)))
+                                                                        .conditionExpression(
+                                                                                "attribute_not_exists(eventId)")
+                                                                        .build())
+                                                        .build())
+                                        .build();
+                        DynamoDbService.validateConditionalTransaction(transaction);
+                        dynamo.transactWriteItems(transaction);
+                        return "UPDATED_WITH_OUTBOX";
+                    },
+                    () ->
+                            reconcileUpdate(
+                                    c,
+                                    table,
+                                    outboxTable,
+                                    key,
+                                    eventId,
+                                    task.key(),
+                                    event));
+        } catch (ConditionalCheckFailedException e) {
+            return "CONFLICT";
+        } catch (TransactionCanceledException e) {
+            if (e.cancellationReasons().stream()
+                    .anyMatch(reason -> "ConditionalCheckFailed".equals(reason.code()))) {
+                return "CONFLICT";
+            }
+            throw e;
+        }
+
         String queue = p.path("queue").asText();
         String topic = p.path("topic").asText();
         String function = p.path("function").asText();
         var functionTarget = ServiceWorkflow.lambdaTarget(function);
-        c.effect(
-                task,
-                "sqs-delivery",
-                queue,
-                () -> sqs.sendMessage(b -> b.queueUrl(queue).messageBody(event)).messageId(),
-                Optional::empty);
-        c.effect(
-                task,
-                "sns-delivery",
-                topic,
-                () -> sns.publish(b -> b.topicArn(topic).message(event)).messageId(),
-                Optional::empty);
+        String sqsMessageId =
+                c.effect(
+                        task,
+                        "sqs-delivery",
+                        queue,
+                        () -> sqs.sendMessage(b -> b.queueUrl(queue).messageBody(event)).messageId(),
+                        Optional::empty);
+        if (outboxTable != null) {
+            markOutboxField(
+                    c,
+                    task,
+                    outboxTable,
+                    eventId,
+                    "outbox-sqs-accepted",
+                    "sqsMessageId",
+                    sqsMessageId);
+        }
+        String snsMessageId =
+                c.effect(
+                        task,
+                        "sns-delivery",
+                        topic,
+                        () -> sns.publish(b -> b.topicArn(topic).message(event)).messageId(),
+                        Optional::empty);
+        if (outboxTable != null) {
+            markOutboxField(
+                    c,
+                    task,
+                    outboxTable,
+                    eventId,
+                    "outbox-sns-accepted",
+                    "snsMessageId",
+                    snsMessageId);
+            markOutboxDelivered(c, task, outboxTable, eventId);
+        }
         String functionResult =
                 c.effect(
                         task,
@@ -292,4 +346,184 @@ public final class PaymentWorkflow extends DynamoWorkflow {
                 });
         return "REPAIRED";
     }
+
+    private static String optionalOutboxTable(JsonNode parameters) {
+        return parameters.has("outboxTable") ? required(parameters, "outboxTable") : null;
+    }
+
+    private static UpdateItemRequest paymentUpdate(
+            String table, Map<String, AttributeValue> key, long version, String eventId) {
+        return UpdateItemRequest.builder()
+                .tableName(table)
+                .key(key)
+                .conditionExpression("#v=:v AND #s=:pending")
+                .updateExpression(
+                        "SET #s=:settled,#v=:next,opsMarker=:marker,opsPreviousStatus=:pending")
+                .expressionAttributeNames(Map.of("#s", "status", "#v", "version"))
+                .expressionAttributeValues(
+                        paymentUpdateValues(version, eventId))
+                .build();
+    }
+
+    private static Update paymentTransactionUpdate(
+            String table, Map<String, AttributeValue> key, long version, String eventId) {
+        return Update.builder()
+                .tableName(table)
+                .key(key)
+                .conditionExpression("#v=:v AND #s=:pending")
+                .updateExpression(
+                        "SET #s=:settled,#v=:next,opsMarker=:marker,opsPreviousStatus=:pending")
+                .expressionAttributeNames(Map.of("#s", "status", "#v", "version"))
+                .expressionAttributeValues(paymentUpdateValues(version, eventId))
+                .build();
+    }
+
+    private static Map<String, AttributeValue> paymentUpdateValues(long version, String eventId) {
+        return Map.of(
+                ":v",
+                n(version),
+                ":next",
+                n(version + 1),
+                ":pending",
+                s("PENDING"),
+                ":settled",
+                s("SETTLED"),
+                ":marker",
+                s(eventId));
+    }
+
+    private static String transactionToken(String eventId) {
+        return UUID.nameUUIDFromBytes(eventId.getBytes(StandardCharsets.UTF_8)).toString();
+    }
+
+    private Optional<String> reconcileUpdate(
+            JobContext c,
+            String table,
+            String outboxTable,
+            Map<String, AttributeValue> key,
+            String eventId,
+            String paymentId,
+            String event)
+            throws Exception {
+        var actual =
+                c.read(
+                                table,
+                                () ->
+                                        dynamo.getItem(
+                                                GetItemRequest.builder()
+                                                        .tableName(table)
+                                                        .key(key)
+                                                        .consistentRead(true)
+                                                        .build()))
+                        .item();
+        if (!eventId.equals(actual.getOrDefault("opsMarker", s("")).s())) {
+            return Optional.empty();
+        }
+        if (outboxTable == null) return Optional.of("RECONCILED");
+        var outbox =
+                c.read(
+                                outboxTable,
+                                () ->
+                                        dynamo.getItem(
+                                                GetItemRequest.builder()
+                                                        .tableName(outboxTable)
+                                                        .key(Map.of("eventId", s(eventId)))
+                                                        .consistentRead(true)
+                                                        .build()))
+                        .item();
+        return eventId.equals(outbox.getOrDefault("eventId", s("")).s())
+                        && paymentId.equals(outbox.getOrDefault("paymentId", s("")).s())
+                        && event.equals(outbox.getOrDefault("payload", s("")).s())
+                ? Optional.of("RECONCILED_WITH_OUTBOX")
+                : Optional.empty();
+    }
+
+    private void markOutboxField(
+            JobContext c,
+            SqliteJournal.Task task,
+            String outboxTable,
+            String eventId,
+            String step,
+            String field,
+            String value)
+            throws Exception {
+        c.effect(
+                task,
+                step,
+                outboxTable,
+                () -> {
+                    dynamo.updateItem(
+                            UpdateItemRequest.builder()
+                                    .tableName(outboxTable)
+                                    .key(Map.of("eventId", s(eventId)))
+                                    .conditionExpression("attribute_exists(eventId)")
+                                    .updateExpression("SET #field=:value")
+                                    .expressionAttributeNames(Map.of("#field", field))
+                                    .expressionAttributeValues(Map.of(":value", s(value)))
+                                    .build());
+                    return value;
+                },
+                () -> {
+                    var actual =
+                            c.read(
+                                            outboxTable,
+                                            () ->
+                                                    dynamo.getItem(
+                                                            GetItemRequest.builder()
+                                                                    .tableName(outboxTable)
+                                                                    .key(
+                                                                            Map.of(
+                                                                                    "eventId",
+                                                                                    s(eventId)))
+                                                                    .consistentRead(true)
+                                                                    .build()))
+                                    .item();
+                    return value.equals(actual.getOrDefault(field, s("")).s())
+                            ? Optional.of(value)
+                            : Optional.empty();
+                });
+    }
+
+    private void markOutboxDelivered(
+            JobContext c, SqliteJournal.Task task, String outboxTable, String eventId)
+            throws Exception {
+        c.effect(
+                task,
+                "outbox-delivered",
+                outboxTable,
+                () -> {
+                    dynamo.updateItem(
+                            UpdateItemRequest.builder()
+                                    .tableName(outboxTable)
+                                    .key(Map.of("eventId", s(eventId)))
+                                    .conditionExpression(
+                                            "attribute_exists(sqsMessageId) AND attribute_exists(snsMessageId)")
+                                    .updateExpression("SET deliveryState=:delivered")
+                                    .expressionAttributeValues(
+                                            Map.of(":delivered", s("DELIVERED")))
+                                    .build());
+                    return "DELIVERED";
+                },
+                () -> {
+                    var actual =
+                            c.read(
+                                            outboxTable,
+                                            () ->
+                                                    dynamo.getItem(
+                                                            GetItemRequest.builder()
+                                                                    .tableName(outboxTable)
+                                                                    .key(
+                                                                            Map.of(
+                                                                                    "eventId",
+                                                                                    s(eventId)))
+                                                                    .consistentRead(true)
+                                                                    .build()))
+                                    .item();
+                    return "DELIVERED".equals(
+                                    actual.getOrDefault("deliveryState", s("")).s())
+                            ? Optional.of("DELIVERED")
+                            : Optional.empty();
+                });
+    }
+
 }
