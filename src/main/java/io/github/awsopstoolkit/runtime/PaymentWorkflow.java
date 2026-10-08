@@ -204,9 +204,7 @@ public final class PaymentWorkflow extends DynamoWorkflow {
                                                 TransactWriteItem.builder()
                                                         .update(
                                                                 paymentTransactionUpdate(
-                                                                        table,
-                                                                        key,
-                                                                        version,
+                                                                        table, key, version,
                                                                         eventId))
                                                         .build(),
                                                 TransactWriteItem.builder()
@@ -220,13 +218,18 @@ public final class PaymentWorkflow extends DynamoWorkflow {
                                                                                         "operationId",
                                                                                         s(c.id()),
                                                                                         "paymentId",
-                                                                                        s(task.key()),
+                                                                                        s(
+                                                                                                task
+                                                                                                        .key()),
                                                                                         "payload",
                                                                                         s(event),
                                                                                         "deliveryState",
-                                                                                        s("PENDING"),
+                                                                                        s(
+                                                                                                "PENDING"),
                                                                                         "version",
-                                                                                        n(version + 1)))
+                                                                                        n(
+                                                                                                version
+                                                                                                        + 1)))
                                                                         .conditionExpression(
                                                                                 "attribute_not_exists(eventId)")
                                                                         .build())
@@ -236,15 +239,7 @@ public final class PaymentWorkflow extends DynamoWorkflow {
                         dynamo.transactWriteItems(transaction);
                         return "UPDATED_WITH_OUTBOX";
                     },
-                    () ->
-                            reconcileUpdate(
-                                    c,
-                                    table,
-                                    outboxTable,
-                                    key,
-                                    eventId,
-                                    task.key(),
-                                    event));
+                    () -> reconcileUpdate(c, table, outboxTable, key, eventId, task.key(), event));
         } catch (ConditionalCheckFailedException e) {
             return "CONFLICT";
         } catch (TransactionCanceledException e) {
@@ -264,7 +259,9 @@ public final class PaymentWorkflow extends DynamoWorkflow {
                         task,
                         "sqs-delivery",
                         queue,
-                        () -> sqs.sendMessage(b -> b.queueUrl(queue).messageBody(event)).messageId(),
+                        () ->
+                                sqs.sendMessage(b -> b.queueUrl(queue).messageBody(event))
+                                        .messageId(),
                         Optional::empty);
         if (outboxTable != null) {
             markOutboxField(
@@ -360,8 +357,7 @@ public final class PaymentWorkflow extends DynamoWorkflow {
                 .updateExpression(
                         "SET #s=:settled,#v=:next,opsMarker=:marker,opsPreviousStatus=:pending")
                 .expressionAttributeNames(Map.of("#s", "status", "#v", "version"))
-                .expressionAttributeValues(
-                        paymentUpdateValues(version, eventId))
+                .expressionAttributeValues(paymentUpdateValues(version, eventId))
                 .build();
     }
 
@@ -499,8 +495,7 @@ public final class PaymentWorkflow extends DynamoWorkflow {
                                     .conditionExpression(
                                             "attribute_exists(sqsMessageId) AND attribute_exists(snsMessageId)")
                                     .updateExpression("SET deliveryState=:delivered")
-                                    .expressionAttributeValues(
-                                            Map.of(":delivered", s("DELIVERED")))
+                                    .expressionAttributeValues(Map.of(":delivered", s("DELIVERED")))
                                     .build());
                     return "DELIVERED";
                 },
@@ -519,11 +514,9 @@ public final class PaymentWorkflow extends DynamoWorkflow {
                                                                     .consistentRead(true)
                                                                     .build()))
                                     .item();
-                    return "DELIVERED".equals(
-                                    actual.getOrDefault("deliveryState", s("")).s())
+                    return "DELIVERED".equals(actual.getOrDefault("deliveryState", s("")).s())
                             ? Optional.of("DELIVERED")
                             : Optional.empty();
                 });
     }
-
 }

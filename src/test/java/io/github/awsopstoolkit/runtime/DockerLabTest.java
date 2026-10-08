@@ -339,9 +339,7 @@ class DockerLabTest {
                 outboxItems.stream()
                         .allMatch(
                                 outbox ->
-                                        "DELIVERED"
-                                                        .equals(
-                                                                outbox.get("deliveryState").s())
+                                        "DELIVERED".equals(outbox.get("deliveryState").s())
                                                 && outbox.containsKey("sqsMessageId")
                                                 && outbox.containsKey("snsMessageId")
                                                 && outbox.get("payload")
