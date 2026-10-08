@@ -9,7 +9,7 @@ Fontes consultadas em **2026-09-18**. **DECISÃO:** cada fronteira tem um único
 | Leitura AWS idempotente | Runtime `JobContext.read` | `toolkit.operations.read-max-attempts`, full-jitter configurável e AIMD; SDK fica em 1 tentativa para evitar retry empilhado |
 | Escrita com condição/token comprovadamente seguro | Sem retry técnico automático no SDK/runtime | Resultado rejeitado pode ser tratado; resultado ambíguo vira UNKNOWN e exige reconciliação |
 | Publish/send/invoke sem idempotência suficiente | Client/request configurado para 1 tentativa | UNKNOWN após resultado ambíguo; decidir no reconciliador |
-| `UnprocessedItems`/`UnprocessedKeys` | Loop semântico do adapter | Reenviar somente pendentes, com orçamento total incluindo retries SDK |
+| `UnprocessedItems`/`UnprocessedKeys` | Loop semântico do adapter | Reenviar somente pendentes, com orçamento total contando cada chamada física; SDK permanece em 1 tentativa |
 | HTTP idempotente | Camada HTTP de integração | Tentativas limitadas, backoff com jitter, Retry-After limitado |
 | HTTP não idempotente | Sem retry técnico automático | Exigir chave/contrato e consulta de status antes de habilitar |
 | Resume de job | Engine | Carrega etapas pendentes; não equivale a retry do job completo |

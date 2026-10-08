@@ -8,7 +8,7 @@ Throttling, timeout e indisponibilidade são esperados. Uma tentativa repetida p
 
 ## Decision
 
-SDK é dono do retry técnico AWS, com standard e `maxAttempts` explícito. Leitura idempotente inicia com teto de 3; efeito sem idempotência suficiente usa 1 e reconciliação de UNKNOWN. Loop de pendentes de Batch APIs tem budget total próprio que conta chamadas físicas. HTTP tem política independente, considerando método, chave, contrato e Retry-After. [Retry SDK](https://docs.aws.amazon.com/sdk-for-java/latest/developer-guide/retry-strategy.html).
+Os clients AWS centrais usam `StandardRetryStrategy.maxAttempts(1)`: o SDK executa exatamente uma tentativa física por chamada lógica. O runtime `JobContext.read` é o único dono das tentativas adicionais para leituras explicitamente seguras, limitado por `toolkit.operations.read-max-attempts`; efeitos sem idempotência suficiente não recebem retry automático e resultado ambíguo vira UNKNOWN para reconciliação. Loops de pendentes de Batch APIs têm budget total próprio e contam cada nova chamada física. HTTP mantém política independente, considerando método, chave, contrato e Retry-After. [Retry SDK](https://docs.aws.amazon.com/sdk-for-java/latest/developer-guide/retry-strategy.html).
 
 ## Alternatives
 
