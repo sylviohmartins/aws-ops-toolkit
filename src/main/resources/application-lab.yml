@@ -15,6 +15,7 @@ toolkit:
     principals: ["arn:aws:iam::123456789012:root"]
     resources:
       - lab-payments
+      - lab-payment-outbox
       - lab-consumed
       - http://127.0.0.1:4566/123456789012/lab-events
       - http://127.0.0.1:4566/123456789012/lab-dlq
