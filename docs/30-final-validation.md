@@ -49,7 +49,7 @@ Inspeção de código não é registro de execução. Este inventário foi confe
 | Relatório | Foundation CSV; runtime gera plano sanitizado, dry-run before/after, erros, summary, manifesto, CSV streaming e XLSX/SXSSF | Destino corporativo, cadeia de custódia e política final de colunas/PII dependem do ambiente |
 | Disco | Estimativa sintética e reserva verificada no início/commit | Falha de storage pode deixar FAILED e exigir inspeção; não há recovery produtivo completo |
 | Observabilidade | Logs estruturados, Actuator, audit SQLite e métricas de dispatch, registros, capacity, AWS/HTTP requests, failures, retries, throttling, latência e transições | OTel/Datadog/dashboard/alertas corporativos continuam dependentes do ambiente |
-| AWS/HTTP | Workflows concretos para DynamoDB/SQS/SNS/Lambda/S3/HTTP, guardrails, ledger e laboratório LocalStack/HTTP exercitável | IAM/SSO/Break Glass, quotas, proxy/TLS e semântica real dos downstreams continuam `VALIDAR NO AMBIENTE` |
+| AWS/HTTP | Workflows concretos para DynamoDB/SQS/SNS/Lambda/S3/HTTP, guardrails, ledger e laboratório LocalStack/HTTP exercitável. A primitive `DynamoDbService.transactWrite` exige token estável, exatamente uma ação por item transacional e `ConditionExpression` em toda ação antes de autorização/dispatch | O `PaymentWorkflow` atual ainda usa update + efeitos cross-service reconciliados, não outbox atômico; IAM/SSO/Break Glass, quotas, proxy/TLS e semântica real dos downstreams continuam `VALIDAR NO AMBIENTE` |
 | Testes pequenos | Arquivos focados em safety, checkpoint e CSV | Resultado depende de execução do build, registrado separadamente |
 
 ## Validação executada: registro factual

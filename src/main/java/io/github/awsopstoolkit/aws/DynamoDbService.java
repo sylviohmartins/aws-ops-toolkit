@@ -328,6 +328,7 @@ public final class DynamoDbService {
                             + DynamoLimits.MAX_TRANSACTION_ACTIONS
                             + " actions and a stable client request token");
         }
+        request.transactItems().forEach(DynamoDbService::requireConditionalTransactionItem);
         return gate.call(
                 () -> {
                     request.transactItems()
@@ -352,6 +353,30 @@ public final class DynamoDbService {
                                     });
                     return client.transactWriteItems(request);
                 });
+    }
+
+    private static void requireConditionalTransactionItem(TransactWriteItem item) {
+        int actions = 0;
+        if (item.put() != null) {
+            actions++;
+            requireCondition(item.put().conditionExpression());
+        }
+        if (item.update() != null) {
+            actions++;
+            requireCondition(item.update().conditionExpression());
+        }
+        if (item.delete() != null) {
+            actions++;
+            requireCondition(item.delete().conditionExpression());
+        }
+        if (item.conditionCheck() != null) {
+            actions++;
+            requireCondition(item.conditionCheck().conditionExpression());
+        }
+        if (actions != 1) {
+            throw new IllegalArgumentException(
+                    "Each transaction item must contain exactly one conditional action");
+        }
     }
 
     private int pageLimit(Integer requested) {
