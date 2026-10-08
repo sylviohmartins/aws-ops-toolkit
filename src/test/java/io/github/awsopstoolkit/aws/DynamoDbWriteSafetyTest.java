@@ -70,8 +70,7 @@ class DynamoDbWriteSafetyTest {
                         .conditionExpression("attribute_exists(pk)")
                         .updateExpression("SET #s=:next")
                         .expressionAttributeNames(Map.of("#s", "status"))
-                        .expressionAttributeValues(
-                                Map.of(":next", AttributeValue.fromS("DONE")))
+                        .expressionAttributeValues(Map.of(":next", AttributeValue.fromS("DONE")))
                         .build();
         var conditionalDelete =
                 Delete.builder()
@@ -121,8 +120,7 @@ class DynamoDbWriteSafetyTest {
                                                 Update.builder()
                                                         .tableName("synthetic-update")
                                                         .key(KEY)
-                                                        .conditionExpression(
-                                                                "attribute_exists(pk)")
+                                                        .conditionExpression("attribute_exists(pk)")
                                                         .updateExpression("SET #s=:next")
                                                         .expressionAttributeNames(
                                                                 Map.of("#s", "status"))
@@ -138,8 +136,7 @@ class DynamoDbWriteSafetyTest {
                                                 Delete.builder()
                                                         .tableName("synthetic-delete")
                                                         .key(KEY)
-                                                        .conditionExpression(
-                                                                "attribute_exists(pk)")
+                                                        .conditionExpression("attribute_exists(pk)")
                                                         .build())
                                         .build(),
                                 TransactWriteItem.builder()
@@ -147,8 +144,7 @@ class DynamoDbWriteSafetyTest {
                                                 ConditionCheck.builder()
                                                         .tableName("synthetic-check")
                                                         .key(KEY)
-                                                        .conditionExpression(
-                                                                "attribute_exists(pk)")
+                                                        .conditionExpression("attribute_exists(pk)")
                                                         .build())
                                         .build())
                         .build();
@@ -166,8 +162,7 @@ class DynamoDbWriteSafetyTest {
                 authorizations);
     }
 
-    private DynamoDbService service(
-            AtomicInteger dispatches, WriteAuthorization authorization) {
+    private DynamoDbService service(AtomicInteger dispatches, WriteAuthorization authorization) {
         var client =
                 (DynamoDbClient)
                         Proxy.newProxyInstance(
@@ -186,7 +181,6 @@ class DynamoDbWriteSafetyTest {
                                     }
                                     throw new UnsupportedOperationException(method.getName());
                                 });
-        return new DynamoDbService(
-                client, new AwsCallGate(1, 1_000_000), authorization, 1000);
+        return new DynamoDbService(client, new AwsCallGate(1, 1_000_000), authorization, 1000);
     }
 }
