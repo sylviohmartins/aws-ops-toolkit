@@ -117,6 +117,60 @@ class PaymentGatewayTest {
     }
 
     @Test
+    void sustained429BurstRemainsBoundedBySharedJobBudget() throws Exception {
+        respond(exchange -> send(exchange, 429, "{}", "Retry-After", "not-a-valid-retry-value"));
+        server.start();
+
+        int callers = 12;
+        int maxCalls = 36;
+        try (var fixture =
+                        fixture(
+                                Duration.ofSeconds(10),
+                                Duration.ofMillis(1),
+                                12,
+                                100_000,
+                                100,
+                                maxCalls);
+                var pool = Executors.newVirtualThreadPerTaskExecutor()) {
+            var futures = new java.util.ArrayList<java.util.concurrent.Future<JobState>>();
+            for (int index = 0; index < callers; index++) {
+                String payment = "sustained-" + index;
+                futures.add(
+                        pool.submit(
+                                () ->
+                                        assertThrows(
+                                                        JobStopped.class,
+                                                        () ->
+                                                                fixture.gateway()
+                                                                        .get(
+                                                                                fixture.context(),
+                                                                                payment))
+                                                .state()));
+            }
+
+            var states = new java.util.ArrayList<JobState>();
+            for (var future : futures) {
+                states.add(future.get(30, TimeUnit.SECONDS));
+            }
+
+            int physicalRequestCeiling = maxCalls / 2;
+            int naivePerCallerCeiling = callers * 3;
+            assertTrue(
+                    states.stream()
+                            .allMatch(
+                                    state ->
+                                            state == JobState.PAUSED
+                                                    || state == JobState.BUDGET_EXCEEDED));
+            assertTrue(states.contains(JobState.BUDGET_EXCEEDED));
+            assertTrue(requests.get() >= callers);
+            assertTrue(requests.get() <= physicalRequestCeiling);
+            assertTrue(requests.get() < naivePerCallerCeiling);
+            assertEquals(1, fixture.limiter().currentConcurrency());
+            assertTrue(fixture.limiter().currentRate() < 100_000);
+        }
+    }
+
+    @Test
     void retryAfterAboveTenSecondsPausesWithoutWaitingOrRetrying() throws Exception {
         respond(exchange -> send(exchange, 429, "{}", "Retry-After", "11"));
         server.start();
@@ -423,6 +477,18 @@ class PaymentGatewayTest {
             int rateCeiling,
             int circuitFailuresBeforeOpen)
             throws Exception {
+        return fixture(
+                timeout, retryBaseBackoff, workers, rateCeiling, circuitFailuresBeforeOpen, 10);
+    }
+
+    private Fixture fixture(
+            Duration timeout,
+            Duration retryBaseBackoff,
+            int workers,
+            int rateCeiling,
+            int circuitFailuresBeforeOpen,
+            int maxCalls)
+            throws Exception {
         var settings =
                 RuntimeTestFixtures.runtime(
                         false,
@@ -442,7 +508,8 @@ class PaymentGatewayTest {
                         fakeSts());
         var journal = RuntimeTestFixtures.journal(directory);
         journal.create("job", "{}", "1", policy.identity(), 1000);
-        var request = new JobRequest("test", json.readTree("{}"), 1, 10, 30, 1, 0, 1, false, false);
+        var request =
+                new JobRequest("test", json.readTree("{}"), 1, maxCalls, 30, 1, 0, 1, false, false);
         var limiter =
                 new DispatchLimiter(
                         workers,
