@@ -19,6 +19,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -71,6 +72,47 @@ class PaymentGatewayTest {
             assertEquals(JobState.PAUSED, stopped.state());
             assertEquals(3, requests.get());
             assertEquals(6, fixture.journal().job("job").calls());
+        }
+    }
+
+    @Test
+    void concurrent429BurstTriggersSharedBudgetAndAimdWithoutRetryAmplification() throws Exception {
+        respond(exchange -> send(exchange, 429, "{}", "Retry-After", "not-a-valid-retry-value"));
+        server.start();
+
+        try (var fixture = fixture(Duration.ofSeconds(10), Duration.ofMillis(1), 4, 100_000, 100);
+                var pool = Executors.newVirtualThreadPerTaskExecutor()) {
+            var futures = new java.util.ArrayList<java.util.concurrent.Future<JobState>>();
+            for (int index = 0; index < 4; index++) {
+                String payment = "burst-" + index;
+                futures.add(
+                        pool.submit(
+                                () ->
+                                        assertThrows(
+                                                        JobStopped.class,
+                                                        () ->
+                                                                fixture.gateway()
+                                                                        .get(
+                                                                                fixture.context(),
+                                                                                payment))
+                                                .state()));
+            }
+
+            var states = new java.util.ArrayList<JobState>();
+            for (var future : futures) {
+                states.add(future.get(10, TimeUnit.SECONDS));
+            }
+
+            assertTrue(
+                    states.stream()
+                            .allMatch(
+                                    state ->
+                                            state == JobState.PAUSED
+                                                    || state == JobState.BUDGET_EXCEEDED));
+            assertTrue(states.contains(JobState.BUDGET_EXCEEDED));
+            assertTrue(requests.get() >= 4 && requests.get() < 12);
+            assertEquals(1, fixture.limiter().currentConcurrency());
+            assertTrue(fixture.limiter().currentRate() < 100_000);
         }
     }
 
@@ -371,6 +413,16 @@ class PaymentGatewayTest {
     }
 
     private Fixture fixture(Duration timeout, Duration retryBaseBackoff) throws Exception {
+        return fixture(timeout, retryBaseBackoff, 1, 1000, 5);
+    }
+
+    private Fixture fixture(
+            Duration timeout,
+            Duration retryBaseBackoff,
+            int workers,
+            int rateCeiling,
+            int circuitFailuresBeforeOpen)
+            throws Exception {
         var settings =
                 RuntimeTestFixtures.runtime(
                         false,
@@ -391,19 +443,26 @@ class PaymentGatewayTest {
         var journal = RuntimeTestFixtures.journal(directory);
         journal.create("job", "{}", "1", policy.identity(), 1000);
         var request = new JobRequest("test", json.readTree("{}"), 1, 10, 30, 1, 0, 1, false, false);
+        var limiter =
+                new DispatchLimiter(
+                        workers,
+                        rateCeiling,
+                        20,
+                        circuitFailuresBeforeOpen,
+                        Duration.ofSeconds(10),
+                        retryBaseBackoff);
         var context =
                 new JobContext(
                         "job",
                         request,
                         journal,
                         policy,
-                        new DispatchLimiter(
-                                1, 1000, 20, 5, Duration.ofSeconds(10), retryBaseBackoff),
+                        limiter,
                         new AtomicReference<>(),
                         Set.of(endpoint.toString()),
                         json,
                         settings);
-        return new Fixture(journal, context, new PaymentGateway(http, settings, timeout));
+        return new Fixture(journal, context, limiter, new PaymentGateway(http, settings, timeout));
     }
 
     private StsClient fakeSts() {
@@ -440,7 +499,11 @@ class PaymentGatewayTest {
         void handle(HttpExchange exchange) throws IOException;
     }
 
-    private record Fixture(SqliteJournal journal, JobContext context, PaymentGateway gateway)
+    private record Fixture(
+            SqliteJournal journal,
+            JobContext context,
+            DispatchLimiter limiter,
+            PaymentGateway gateway)
             implements AutoCloseable {
         @Override
         public void close() throws Exception {
