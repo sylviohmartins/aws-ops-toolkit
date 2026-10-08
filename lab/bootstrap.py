@@ -20,6 +20,11 @@ if 'lab-payments' not in ddb.list_tables()['TableNames']:
 if 'lab-consumed' not in ddb.list_tables()['TableNames']:
     ddb.create_table(TableName='lab-consumed', KeySchema=[{'AttributeName':'id','KeyType':'HASH'}],
                      AttributeDefinitions=[{'AttributeName':'id','AttributeType':'S'}], BillingMode='PAY_PER_REQUEST')
+if 'lab-payment-outbox' not in ddb.list_tables()['TableNames']:
+    ddb.create_table(TableName='lab-payment-outbox',
+                     KeySchema=[{'AttributeName':'eventId','KeyType':'HASH'}],
+                     AttributeDefinitions=[{'AttributeName':'eventId','AttributeType':'S'}],
+                     BillingMode='PAY_PER_REQUEST')
 for i in range(int(os.environ.get('LAB_RECORDS', '200'))):
     ddb.put_item(TableName='lab-payments', Item={'id':{'S':f'payment-{i:06d}'},'status':{'S':'PENDING'},'version':{'N':'1'}})
 sqs = client('sqs')
@@ -50,4 +55,4 @@ lam=client('lambda')
 if 'lab-reconcile' not in [f['FunctionName'] for f in lam.list_functions()['Functions']]:
     lam.create_function(FunctionName='lab-reconcile', Runtime='python3.11', Role=role, Handler='handler.run', Code={'ZipFile':code.getvalue()},Timeout=10,Publish=True)
     lam.create_alias(FunctionName='lab-reconcile', Name='approved', FunctionVersion='1')
-print(json.dumps({'queues':queues,'topic':topic,'table':'lab-payments'}))
+print(json.dumps({'queues':queues,'topic':topic,'table':'lab-payments','outbox':'lab-payment-outbox'}))
