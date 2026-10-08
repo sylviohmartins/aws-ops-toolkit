@@ -410,6 +410,47 @@ class OperationSafetyTest {
     }
 
     @Test
+    void maxConcurrentOperationsRejectsSecondStartInsteadOfQueueing() throws Exception {
+        var properties = properties(ToolkitProperties.Environment.LOCAL, false);
+        try (var store = new FileCheckpointStore(properties, mapper);
+                var validation = Validation.buildDefaultValidatorFactory()) {
+            var meters = new SimpleMeterRegistry();
+            var executor =
+                    new OperationExecutor(
+                            new OperationRegistry(List.of(syntheticOperation())),
+                            store,
+                            new PreflightCheckService(properties, store),
+                            properties,
+                            mapper,
+                            validation.getValidator(),
+                            meters);
+            try {
+                var request =
+                        new OperationRequest(
+                                OperationMode.DRY_RUN,
+                                mapper.valueToTree(
+                                        new SyntheticInventoryOperation.Input(100000, 5)));
+                var first = executor.start("synthetic-inventory", request);
+
+                var rejected =
+                        assertThrows(
+                                IllegalStateException.class,
+                                () -> executor.start("synthetic-inventory", request));
+
+                assertEquals("Operation capacity unavailable", rejected.getMessage());
+                assertTrue(executor.status(first.operationId()).status().active());
+                executor.requestStop(first.operationId(), true);
+                assertEquals(
+                        OperationStatus.CANCELLED,
+                        awaitTerminal(executor, first.operationId()).status());
+            } finally {
+                executor.shutdown();
+                meters.close();
+            }
+        }
+    }
+
+    @Test
     void immediatePauseResumeNeverLosesWorkerOwnership() throws Exception {
         var base = properties(ToolkitProperties.Environment.LOCAL, false);
         var properties =
