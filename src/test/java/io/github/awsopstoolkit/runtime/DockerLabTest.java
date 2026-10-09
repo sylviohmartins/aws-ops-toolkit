@@ -300,7 +300,9 @@ class DockerLabTest {
                                         "function",
                                         "lab-reconcile:approved",
                                         "evidenceBucket",
-                                        "lab-evidence"),
+                                        "lab-evidence",
+                                        "outboxTable",
+                                        "lab-payment-outbox"),
                                 4,
                                 2));
         var plan = waitFor(job.id(), JobState.READY);
@@ -320,6 +322,29 @@ class DockerLabTest {
                                         b.bucket("lab-evidence")
                                                 .prefix("operations/" + job.id() + "/"))
                         .keyCount());
+        var outboxItems =
+                dynamo.scan(
+                                b ->
+                                        b.tableName("lab-payment-outbox")
+                                                .filterExpression("operationId=:operation")
+                                                .expressionAttributeValues(
+                                                        Map.of(
+                                                                ":operation",
+                                                                AttributeValue.builder()
+                                                                        .s(job.id())
+                                                                        .build())))
+                        .items();
+        assertEquals(2, outboxItems.size());
+        assertTrue(
+                outboxItems.stream()
+                        .allMatch(
+                                outbox ->
+                                        "DELIVERED".equals(outbox.get("deliveryState").s())
+                                                && outbox.containsKey("sqsMessageId")
+                                                && outbox.containsKey("snsMessageId")
+                                                && outbox.get("payload")
+                                                        .s()
+                                                        .contains(outbox.get("eventId").s())));
         coordinator.stop(job.id(), true);
         assertEquals(JobState.CANCELLED, coordinator.status(job.id()).state());
         var compensation =
@@ -346,7 +371,9 @@ class DockerLabTest {
                                         "function",
                                         "lab-reconcile:approved",
                                         "evidenceBucket",
-                                        "lab-evidence"),
+                                        "lab-evidence",
+                                        "outboxTable",
+                                        "lab-payment-outbox"),
                                 1,
                                 1));
         var plan = waitFor(job.id(), JobState.READY);
@@ -386,6 +413,19 @@ class DockerLabTest {
                                         b.bucket("lab-evidence")
                                                 .prefix("operations/" + job.id() + "/"))
                         .keyCount());
+        assertEquals(
+                0,
+                dynamo.scan(
+                                b ->
+                                        b.tableName("lab-payment-outbox")
+                                                .filterExpression("operationId=:operation")
+                                                .expressionAttributeValues(
+                                                        Map.of(
+                                                                ":operation",
+                                                                AttributeValue.builder()
+                                                                        .s(job.id())
+                                                                        .build())))
+                        .count());
     }
 
     @Test

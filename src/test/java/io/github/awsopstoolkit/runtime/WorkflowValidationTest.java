@@ -3,6 +3,7 @@ package io.github.awsopstoolkit.runtime;
 import static org.junit.jupiter.api.Assertions.*;
 
 import io.github.awsopstoolkit.configuration.ToolkitProperties;
+import java.net.URI;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.Set;
@@ -226,6 +227,63 @@ class WorkflowValidationTest {
                         false,
                         false);
         assertDoesNotThrow(() -> rule.validate(request));
+    }
+
+    @Test
+    void paymentOutboxIsOptionalAndBecomesAPlannedResourceWhenPresent() {
+        var rule =
+                new PaymentWorkflow(
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        RuntimeTestFixtures.http(
+                                URI.create("http://127.0.0.1:8091"), Set.of("127.0.0.1")));
+        var legacyParameters =
+                Map.<String, Object>of(
+                        "table",
+                        "payments",
+                        "queue",
+                        "queue",
+                        "topic",
+                        "topic",
+                        "function",
+                        "reconcile:approved",
+                        "evidenceBucket",
+                        "evidence");
+        var legacy =
+                new JobRequest(
+                        "payment-repair",
+                        json.valueToTree(legacyParameters),
+                        1,
+                        100,
+                        60,
+                        1,
+                        0,
+                        1,
+                        false,
+                        false);
+        assertDoesNotThrow(() -> rule.validate(legacy));
+        assertFalse(rule.resources(legacy.parameters()).contains("payment-outbox"));
+
+        var withOutbox = new java.util.LinkedHashMap<>(legacyParameters);
+        withOutbox.put("outboxTable", "payment-outbox");
+        var transactional =
+                new JobRequest(
+                        "payment-repair",
+                        json.valueToTree(withOutbox),
+                        1,
+                        100,
+                        60,
+                        1,
+                        0,
+                        1,
+                        false,
+                        false);
+        assertDoesNotThrow(() -> rule.validate(transactional));
+        assertTrue(rule.resources(transactional.parameters()).contains("payment-outbox"));
     }
 
     @Test
