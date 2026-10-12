@@ -170,12 +170,17 @@ public final class JobContext {
         var previous = journal.effect(id, task.sequence(), step);
         if (previous != null && previous.state() == EffectState.SUCCEEDED) return previous.result();
         if (previous != null && previous.state() != EffectState.NOT_SENT) {
-            Optional<String> result = reconcile.get();
-            if (result.isPresent()) {
-                journal.effect(id, task.sequence(), step, EffectState.SUCCEEDED, result.get());
-                return result.get();
+            try {
+                Optional<String> result = reconcile.get();
+                if (result.isPresent()) {
+                    journal.effect(id, task.sequence(), step, EffectState.SUCCEEDED, result.get());
+                    return result.get();
+                }
+                throw new JobStopped(JobState.RECONCILIATION_REQUIRED);
+            } catch (EffectConfirmedAbsent absent) {
+                journal.effect(id, task.sequence(), step, EffectState.NOT_SENT, "");
+                previous = null;
             }
-            throw new JobStopped(JobState.RECONCILIATION_REQUIRED);
         }
         limiter.acquire(journal.job(id).rate());
         try {
