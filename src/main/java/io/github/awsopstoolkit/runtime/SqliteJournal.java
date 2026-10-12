@@ -3,6 +3,9 @@ package io.github.awsopstoolkit.runtime;
 import io.github.awsopstoolkit.configuration.JournalProperties;
 import io.github.awsopstoolkit.security.Hashing;
 import java.io.IOException;
+import java.nio.channels.FileChannel;
+import java.nio.channels.FileLock;
+import java.nio.channels.OverlappingFileLockException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.security.*;
@@ -22,6 +25,8 @@ public final class SqliteJournal implements AutoCloseable {
             "outcome IN ('FAILED','FUNCTION_ERROR','BUSINESS_REJECTED','ERROR','CONFLICT')";
     private final Connection db;
     private final Path directory;
+    private final FileChannel processLockChannel;
+    private final FileLock processLock;
     private final int apiPageSize;
     private final int reportWindowSize;
 
@@ -32,9 +37,37 @@ public final class SqliteJournal implements AutoCloseable {
         this.apiPageSize = properties.apiPageSize();
         this.reportWindowSize = properties.reportWindowSize();
         Files.createDirectories(this.directory);
-        db =
-                DriverManager.getConnection(
-                        "jdbc:sqlite:" + this.directory.resolve("operations.sqlite"));
+        processLockChannel =
+                FileChannel.open(
+                        this.directory.resolve(".runtime.lock"),
+                        StandardOpenOption.CREATE,
+                        StandardOpenOption.WRITE);
+        FileLock acquired;
+        try {
+            acquired = processLockChannel.tryLock();
+        } catch (OverlappingFileLockException failure) {
+            processLockChannel.close();
+            throw new IOException("Runtime data directory is already in use", failure);
+        } catch (IOException | RuntimeException failure) {
+            processLockChannel.close();
+            throw failure;
+        }
+        if (acquired == null) {
+            processLockChannel.close();
+            throw new IOException("Runtime data directory is already in use");
+        }
+        processLock = acquired;
+
+        Connection opened;
+        try {
+            opened =
+                    DriverManager.getConnection(
+                            "jdbc:sqlite:" + this.directory.resolve("operations.sqlite"));
+        } catch (SQLException | RuntimeException failure) {
+            releaseProcessLock();
+            throw failure;
+        }
+        db = opened;
         try (var s = db.createStatement()) {
             int version;
             try (var r = s.executeQuery("PRAGMA user_version")) {
@@ -83,8 +116,12 @@ public final class SqliteJournal implements AutoCloseable {
             db.commit();
             db.setAutoCommit(true);
         } catch (SQLException | RuntimeException e) {
-            if (!db.getAutoCommit()) db.rollback();
-            db.close();
+            try {
+                if (!db.getAutoCommit()) db.rollback();
+                db.close();
+            } finally {
+                releaseProcessLock();
+            }
             throw e;
         }
     }
@@ -647,7 +684,32 @@ public final class SqliteJournal implements AutoCloseable {
 
     @Override
     public synchronized void close() throws SQLException {
-        db.close();
+        SQLException failure = null;
+        try {
+            db.close();
+        } catch (SQLException closeFailure) {
+            failure = closeFailure;
+        }
+        try {
+            releaseProcessLock();
+        } catch (IOException lockFailure) {
+            if (failure == null) {
+                failure =
+                        new SQLException(
+                                "Could not release runtime data directory lock", lockFailure);
+            } else {
+                failure.addSuppressed(lockFailure);
+            }
+        }
+        if (failure != null) throw failure;
+    }
+
+    private void releaseProcessLock() throws IOException {
+        try {
+            if (processLock.isValid()) processLock.release();
+        } finally {
+            processLockChannel.close();
+        }
     }
 
     @FunctionalInterface
