@@ -47,6 +47,9 @@ jobs:
       - name: Verify, format checks and static analysis
         run: .\mvnw.cmd --batch-mode --no-transfer-progress verify -Pstatic-analysis
 
+      - name: DEV/HML preflight contract (offline only)
+        run: .\scripts\test-dev-hml-preflight.ps1
+
       - name: Local smoke without AWS credentials
         timeout-minutes: 5
         run: .\scripts\smoke.ps1
