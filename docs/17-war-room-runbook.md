@@ -16,6 +16,8 @@ Iniciar a aplicação pelo IntelliJ com a configuração LOCAL documentada no [R
 
 Executar somente o inventário sintético. Conferir geração incremental de CSV, diretório de estado e erro claro para modos/ambientes não suportados. A presença de classes de adapters AWS não habilita operação produtiva completa. Não chamar métodos de escrita de exemplo para substituir autorização ou ledger ausente.
 
+Para uma primeira conferência **somente de configuração** antes da homologação DEV/HML, consulte o [preflight de identidade e recursos](development/dev-hml-preflight.md). Ele não autoriza escrita nem substitui a verificação STS realizada pelo processo Java.
+
 ## Pré-operação AWS, após homologação
 
 | Passo | Evidência necessária | Se falhar |
